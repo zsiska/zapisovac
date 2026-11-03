@@ -26,16 +26,35 @@
       <button id="btnRecord" class="record" aria-label="Spustit nahrávání"><span></span></button>
       <div id="timer" class="timer">00:00</div>
       <div id="recName" class="rec-name">Stiskněte pro nahrávání</div>
-      <p id="recHint" class="hint" hidden>Nechte aplikaci otevřenou. Displej zůstane rozsvícený.</p>
+      <p id="recHint" class="hint" hidden></p>
+      <button id="btnDark" class="btn secondary dark-btn" hidden>Ztmavit obrazovku</button>
       <div id="live" class="live" hidden></div>
     </section>
 
     <section class="import">
       <label class="btn secondary">
-        Importovat nahrávku (např. hovor)
+        Importovat nahrávku (Diktafon, hovor)
         <input id="fileImport" type="file" accept="audio/*,.m4a,.mp3,.wav" hidden>
       </label>
     </section>
+
+    <details class="guide">
+      <summary>Nahrávání se zhasnutým telefonem</summary>
+      <p>Zapisovač nahrává jen se <b>zapnutým displejem</b>. Zamčením telefonu se nahrávání přeruší – zvuk se ale uloží a můžete klepnout na <b>Pokračovat</b>.</p>
+      <p><b>Aby se telefon sám nezamkl:</b></p>
+      <ul>
+        <li>Nastavení → Zobrazení a jas → Automatický zámek → <b>Nikdy</b></li>
+        <li>Vypněte <b>Úsporný režim</b> – ten zamyká telefon po 30 s.</li>
+        <li>Během nahrávání klepněte na <b>Ztmavit obrazovku</b> – displej zčerná a šetří baterii.</li>
+      </ul>
+      <p><b>Dlouhá schůzka s telefonem v kapse? Použijte Diktafon:</b></p>
+      <ol>
+        <li>Nahrajte schůzku v aplikaci <b>Diktafon</b> – ten nahrává i zamčený.</li>
+        <li>V Diktafonu klepněte na nahrávku → <b>⋯</b> → <b>Sdílet</b> → <b>Uložit do Souborů</b>.</li>
+        <li>Tady klepněte na <b>Importovat nahrávku</b> a vyberte ji.</li>
+      </ol>
+      <p><b>Nahrávka hovoru:</b> v aplikaci Poznámky otevřete nahrávku hovoru → <b>⋯</b> → <b>Uložit zvuk do Souborů</b>, pak Importovat.</p>
+    </details>
 
     <section>
       <h2>Nahrávky</h2>
@@ -52,8 +71,12 @@
     </header>
     <div class="detail-body">
       <p id="dMeta" class="muted"></p>
-      <audio id="dAudio" controls preload="metadata"></audio>
+      <div id="dAudios"></div>
       <p id="dStatus" class="status" hidden></p>
+      <div id="resumeBox" class="actions" hidden>
+        <button id="btnContinue" class="btn">Pokračovat v nahrávání</button>
+        <button id="btnFinish" class="btn secondary">Dokončit a zpracovat</button>
+      </div>
       <div id="manualBox" class="actions" hidden>
         <button id="btnClaude" class="btn">1. Napsat zápis v aplikaci Claude</button>
         <button id="btnPaste" class="btn secondary">2. Vložit hotový zápis ze schránky</button>
@@ -121,6 +144,11 @@
       </div>
     </form>
   </dialog>
+
+  <div id="dark" class="dark" hidden>
+    <div id="darkTimer" class="dark-timer">00:00</div>
+    <p>Nahrávám · klepněte pro návrat</p>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
 

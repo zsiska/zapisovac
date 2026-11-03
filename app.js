@@ -58,20 +58,28 @@ function missingKeys(st = loadSettings()) {
 
 let db;
 
+// recordings: nahrávky; chunks: kousky zvuku ukládané během nahrávání,
+// aby se při přerušení (zamčení, zavření aplikace) nic neztratilo.
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open("zapisovac", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("recordings", { keyPath: "id" });
+    const req = indexedDB.open("zapisovac", 2);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("recordings")) d.createObjectStore("recordings", { keyPath: "id" });
+      if (!d.objectStoreNames.contains("chunks")) {
+        d.createObjectStore("chunks", { keyPath: "id", autoIncrement: true }).createIndex("recId", "recId");
+      }
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-function store(mode, fn) {
+function store(mode, fn, name = "recordings") {
   return new Promise((resolve, reject) => {
-    const t = db.transaction("recordings", mode);
-    const req = fn(t.objectStore("recordings"));
-    t.oncomplete = () => resolve(req.result);
+    const t = db.transaction(name, mode);
+    const req = fn(t.objectStore(name));
+    t.oncomplete = () => resolve(req?.result);
     t.onerror = () => reject(t.error);
   });
 }
@@ -79,7 +87,27 @@ function store(mode, fn) {
 const putRec = (rec) => store("readwrite", (s) => s.put(rec));
 const getRec = (id) => store("readonly", (s) => s.get(id));
 const allRecs = () => store("readonly", (s) => s.getAll());
-const deleteRec = (id) => store("readwrite", (s) => s.delete(id));
+const addChunk = (recId, data) => store("readwrite", (s) => s.add({ recId, data }), "chunks");
+const chunksFor = (recId) => store("readonly", (s) => s.index("recId").getAll(recId), "chunks");
+const deleteChunks = (recId) => store("readwrite", (s) => {
+  s.index("recId").openKeyCursor(IDBKeyRange.only(recId)).onsuccess = (e) => {
+    const cur = e.target.result;
+    if (cur) {
+      s.delete(cur.primaryKey);
+      cur.continue();
+    }
+  };
+}, "chunks");
+
+async function deleteRec(id) {
+  await deleteChunks(id);
+  await store("readwrite", (s) => s.delete(id));
+}
+
+// Nahrávka může mít víc částí (pokračování po přerušení). Starší záznamy mají jen `audio`.
+function recParts(rec) {
+  return rec.parts || (rec.audio ? [rec.audio] : []);
+}
 
 // ---------- pomocné ----------
 
@@ -105,8 +133,9 @@ function extFor(type) {
   return "m4a";
 }
 
-function fileNameFor(rec) {
-  return rec.name.replace(/[\\/:*?"<>|]/g, "-") + "." + extFor(rec.mime || "");
+function fileNameFor(rec, i = 0, count = 1) {
+  const part = count > 1 ? ` (část ${i + 1})` : "";
+  return rec.name.replace(/[\\/:*?"<>|]/g, "-") + part + "." + extFor(rec.mime || "");
 }
 
 function esc(s) {
@@ -222,11 +251,20 @@ function withSpeakers(data) {
   return lines.join("\n\n");
 }
 
-// Celá nahrávka: ElevenLabs vezme cokoli najednou, pro Groq se velký soubor
-// rozdělí na části ve WAV (16 kHz mono).
-async function transcribeFile(blob, onProgress) {
+// Celá nahrávka (všechny její části): ElevenLabs vezme cokoli najednou,
+// pro Groq se velký soubor rozdělí na kusy ve WAV (16 kHz mono).
+async function transcribeFile(parts, onProgress) {
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    const of = parts.length > 1 ? ` (část ${i + 1} z ${parts.length})` : "";
+    out.push(await transcribeBlob(parts[i], (p) => onProgress(p + of)));
+  }
+  return out.filter(Boolean).join("\n\n");
+}
+
+async function transcribeBlob(blob, onProgress) {
   if (loadSettings().sttProvider === "elevenlabs") {
-    onProgress("Přepisuji celou nahrávku a rozlišuji mluvčí…");
+    onProgress("Přepisuji nahrávku a rozlišuji mluvčí…");
     return transcribe(blob, { diarize: true });
   }
   if (blob.size <= MAX_UPLOAD) {
@@ -234,11 +272,11 @@ async function transcribeFile(blob, onProgress) {
     return transcribe(blob);
   }
   onProgress("Připravuji dlouhou nahrávku…");
-  const parts = await splitToWav(blob, CHUNK_SECONDS);
+  const chunks = await splitToWav(blob, CHUNK_SECONDS);
   const out = [];
-  for (let i = 0; i < parts.length; i++) {
-    onProgress(`Přepisuji část ${i + 1} z ${parts.length}…`);
-    out.push(await transcribe(parts[i]));
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress(`Přepisuji úsek ${i + 1} z ${chunks.length}…`);
+    out.push(await transcribe(chunks[i]));
   }
   return out.join(" ");
 }
@@ -410,10 +448,10 @@ function makeNotes(rec, onText) {
 
 const processing = new Set();
 
-// liveText = průběžný přepis z nahrávání. U Groq se rovnou použije (šetří
+// rec.live = průběžný přepis z nahrávání. U Groq se rovnou použije (šetří
 // bezplatný limit); u ElevenLabs se celá nahrávka přepíše znovu s mluvčími
-// a průběžný přepis slouží jen jako záloha.
-async function processRecording(rec, liveText = "") {
+// a průběžný přepis slouží jen jako záloha. redo = vždy přepsat celý zvuk.
+async function processRecording(rec, { redo = false } = {}) {
   if (processing.has(rec.id)) return;
   processing.add(rec.id);
   const update = async (patch) => {
@@ -421,6 +459,7 @@ async function processRecording(rec, liveText = "") {
     await putRec(rec);
     refresh(rec);
   };
+  const liveText = !redo && !rec.liveFailed ? rec.live || "" : "";
   try {
     const st = loadSettings();
     await update({ status: "processing", error: "" });
@@ -428,7 +467,7 @@ async function processRecording(rec, liveText = "") {
       await update({ transcript: liveText });
     } else {
       try {
-        await update({ transcript: await transcribeFile(rec.audio, (p) => update({ progress: p })) });
+        await update({ transcript: await transcribeFile(recParts(rec), (p) => update({ progress: p })) });
       } catch (err) {
         if (!liveText) throw err;
         await update({ transcript: liveText });
@@ -471,7 +510,8 @@ function newRecorder(stream) {
   return new MediaRecorder(stream, MIME ? { mimeType: MIME } : undefined);
 }
 
-async function startRecording() {
+// existing = pokračování v přerušené nahrávce (přidá se další část).
+async function startRecording(existing) {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -482,7 +522,7 @@ async function startRecording() {
     return;
   }
   const started = new Date();
-  const rec = {
+  const rec = existing || {
     id: crypto.randomUUID(),
     created: started.toISOString(),
     name: stamp(started),
@@ -491,39 +531,68 @@ async function startRecording() {
     lon: null,
     mime: MIME,
     duration: 0,
+    parts: [],
+    live: "",
+    liveFailed: false,
     transcript: "",
     notes: "",
-    status: "recording",
     source: "mic",
   };
-  const s = { rec, stream, chunks: [], texts: [], segIndex: 0, failed: false, pending: Promise.resolve(), startedAt: Date.now() };
+  Object.assign(rec, { status: "recording", progress: "", error: "" });
+  await putRec(rec);
+
+  const s = {
+    rec,
+    stream,
+    chunks: [],
+    texts: [],
+    liveBase: rec.live || "",
+    segIndex: 0,
+    failed: false,
+    pending: Promise.resolve(),
+    startedAt: Date.now(),
+  };
   session = s;
 
+  // Každé 2 s se kousek zvuku uloží do databáze.
   s.main = newRecorder(stream);
-  s.main.ondataavailable = (e) => e.data.size && s.chunks.push(e.data);
-  s.main.start(1000);
+  s.main.ondataavailable = (e) => {
+    if (!e.data.size) return;
+    s.chunks.push(e.data);
+    addChunk(rec.id, e.data).catch(() => {});
+  };
+  s.main.start(2000);
   startSegment(s);
   s.segTimer = setInterval(() => rotateSegment(s), SEGMENT_SECONDS * 1000);
-  s.tick = setInterval(() => ($("#timer").textContent = clock((Date.now() - s.startedAt) / 1000)), 500);
+  s.tick = setInterval(() => {
+    const t = clock(rec.duration + (Date.now() - s.startedAt) / 1000);
+    $("#timer").textContent = t;
+    $("#darkTimer").textContent = t;
+  }, 500);
 
-  // Hovor nebo jiná aplikace může mikrofon odebrat – uložíme, co máme.
-  const track = stream.getAudioTracks()[0];
-  track.addEventListener("ended", () => session === s && stopRecording("Nahrávání bylo přerušeno (např. hovorem). Uloženo."));
-  s.main.onerror = () => session === s && stopRecording("Nahrávání bylo přerušeno. Uloženo.");
+  // Hovor, zamčení nebo jiná aplikace může mikrofon odebrat – uložíme, co máme.
+  s.track = stream.getAudioTracks()[0];
+  s.track.addEventListener("ended", () => session === s && finishRecording(s, true));
+  s.main.onerror = () => session === s && finishRecording(s, true);
 
-  requestWakeLock();
   setRecordingUI(true);
   $("#recName").textContent = rec.name;
-  $("#live").textContent = sttKey() ? "Průběžný přepis se objeví za pár vteřin…" : "Průběžný přepis je vypnutý – chybí klíč pro přepis.";
+  showLive(s);
+  keepAwake();
 
-  getPosition().then(async (c) => {
-    if (!c) return;
-    rec.lat = c.latitude;
-    rec.lon = c.longitude;
-    rec.place = await placeName(c);
-    rec.name = stamp(started) + (rec.place ? ` – ${rec.place}` : "");
-    if (session === s) $("#recName").textContent = rec.name;
-  });
+  if (!existing) {
+    getPosition().then(async (c) => {
+      if (!c) return;
+      rec.lat = c.latitude;
+      rec.lon = c.longitude;
+      rec.place = await placeName(c);
+      rec.name = stamp(started) + (rec.place ? ` – ${rec.place}` : "");
+      if (session === s) {
+        $("#recName").textContent = rec.name;
+        putRec(rec).catch(() => {});
+      }
+    });
+  }
 }
 
 function startSegment(s) {
@@ -545,6 +614,17 @@ function rotateSegment(s) {
   old.stop();
 }
 
+function liveText(s) {
+  return [s.liveBase, s.texts.filter(Boolean).join(" ")].filter(Boolean).join("\n\n");
+}
+
+function showLive(s) {
+  const live = $("#live");
+  if (!sttKey()) live.textContent = "Průběžný přepis je vypnutý – chybí klíč pro přepis.";
+  else live.textContent = liveText(s) || "Průběžný přepis se objeví za pár vteřin…";
+  live.scrollTop = live.scrollHeight;
+}
+
 function queueSegment(s, idx, blob) {
   if (!sttKey()) {
     s.failed = true;
@@ -553,75 +633,121 @@ function queueSegment(s, idx, blob) {
   s.pending = s.pending.then(async () => {
     try {
       s.texts[idx] = await transcribe(blob);
+      s.rec.live = liveText(s);
+      if (session === s) putRec(s.rec).catch(() => {});
     } catch (err) {
       s.failed = true;
       if (session === s) toast(err.message);
     }
-    if (session === s) {
-      const live = $("#live");
-      live.textContent = s.texts.filter(Boolean).join(" ") || "…";
-      live.scrollTop = live.scrollHeight;
-    }
+    if (session === s) showLive(s);
   });
 }
 
-async function stopRecording(message) {
-  const s = session;
-  if (!s) return;
+// interrupted = přerušeno systémem (zamčení, hovor); nahrávka čeká na Pokračovat.
+async function finishRecording(s, interrupted) {
+  if (session !== s) return;
   session = null;
   clearInterval(s.segTimer);
   clearInterval(s.tick);
   const stopped = (r) => (r.state === "inactive" ? Promise.resolve() : new Promise((res) => {
     r.addEventListener("stop", res, { once: true });
-    r.stop();
+    try {
+      r.stop();
+    } catch {
+      res();
+    }
   }));
   await Promise.all([stopped(s.seg), stopped(s.main)]);
   s.stream.getTracks().forEach((t) => t.stop());
-  releaseWakeLock();
+  releaseAwake();
   setRecordingUI(false);
 
   const rec = s.rec;
-  rec.audio = new Blob(s.chunks, { type: s.main.mimeType || MIME });
-  rec.mime = rec.audio.type;
-  rec.duration = (Date.now() - s.startedAt) / 1000;
-  rec.status = "processing";
+  const blob = new Blob(s.chunks, { type: s.main.mimeType || MIME });
+  if (blob.size) {
+    rec.parts = [...recParts(rec), blob];
+    delete rec.audio;
+    rec.mime = blob.type;
+  }
+  rec.duration += (Date.now() - s.startedAt) / 1000;
+  rec.status = interrupted ? "interrupted" : "processing";
   rec.progress = "Dokončuji přepis…";
   await putRec(rec);
+  await deleteChunks(rec.id);
   await renderList();
-  openDetail(rec.id);
-  if (message) toast(message);
+  // Dokud doběhne přepis posledního úseku, je nahrávka „zaneprázdněná“
+  // (nejde pokračovat ani zpracovat).
+  processing.add(rec.id);
+  openDetail(rec.id, rec);
+  if (interrupted) toast("Nahrávání se přerušilo. Zvuk je uložený – můžete pokračovat.");
 
   await s.pending;
-  const live = s.failed ? "" : s.texts.filter(Boolean).join(" ");
-  processRecording(rec, live);
+  rec.live = liveText(s);
+  rec.liveFailed = rec.liveFailed || s.failed;
+  rec.progress = "";
+  await putRec(rec);
+  processing.delete(rec.id);
+  refresh(rec);
+  if (!interrupted) processRecording(rec);
 }
 
 function setRecordingUI(on) {
   $("#btnRecord").classList.toggle("on", on);
   $("#btnRecord").setAttribute("aria-label", on ? "Ukončit nahrávání" : "Spustit nahrávání");
   $("#recHint").hidden = !on;
+  $("#btnDark").hidden = !on;
   $("#live").hidden = !on;
   if (!on) {
+    $("#dark").hidden = true;
     $("#timer").textContent = "00:00";
     $("#recName").textContent = "Stiskněte pro nahrávání";
   }
 }
 
+// Udržení rozsvíceného displeje. Když to systém nedovolí, upozorníme.
 let wakeLock = null;
-async function requestWakeLock() {
+async function keepAwake() {
   try {
-    wakeLock = await navigator.wakeLock?.request("screen");
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => {
+      wakeLock = null;
+    });
   } catch {
     wakeLock = null;
   }
+  const hint = $("#recHint");
+  hint.classList.toggle("warn", !wakeLock);
+  hint.textContent = wakeLock
+    ? "Displej zůstane rozsvícený. Telefon nezamykejte tlačítkem."
+    : "Pozor: telefon se může sám zamknout a nahrávání se přeruší. Nastavte Automatický zámek → Nikdy (viz návod níže).";
 }
-function releaseWakeLock() {
+function releaseAwake() {
   wakeLock?.release().catch(() => {});
   wakeLock = null;
 }
+
+// Po návratu z pozadí: zkontrolovat, jestli nahrávání ještě běží.
 document.addEventListener("visibilitychange", () => {
-  if (session && document.visibilityState === "visible") requestWakeLock();
+  const s = session;
+  if (!s || document.visibilityState !== "visible") return;
+  if (s.track.readyState === "ended" || s.main.state !== "recording") finishRecording(s, true);
+  else if (!wakeLock) keepAwake();
 });
+
+// Aplikace byla zavřena uprostřed nahrávání: složit uložené kousky do nové části.
+async function recoverRecording(rec) {
+  const chunks = await chunksFor(rec.id);
+  if (chunks.length) {
+    const blob = new Blob(chunks.map((c) => c.data), { type: rec.mime || MIME });
+    rec.parts = [...recParts(rec), blob];
+    delete rec.audio;
+    rec.duration += await audioDuration(blob);
+  }
+  rec.status = recParts(rec).length ? "interrupted" : "error";
+  rec.error = rec.status === "error" ? "Nahrávání bylo přerušeno, zvuk se neuložil." : "";
+  await putRec(rec);
+  await deleteChunks(rec.id);
+}
 
 // ---------- import souboru ----------
 
@@ -635,12 +761,12 @@ async function importFile(file) {
     place: "",
     mime: file.type || "audio/mp4",
     duration: 0,
+    parts: [file],
     transcript: "",
     notes: "",
     status: "processing",
     progress: "Načítám…",
     source: "import",
-    audio: file,
   };
   rec.duration = await audioDuration(file);
   await putRec(rec);
@@ -666,7 +792,13 @@ function audioDuration(blob) {
 
 // ---------- seznam a detail ----------
 
-const STATUS_LABEL = { processing: "zpracovává se…", error: "chyba", recording: "nahrává se", manual: "čeká na zápis" };
+const STATUS_LABEL = {
+  processing: "zpracovává se…",
+  error: "chyba",
+  recording: "nahrává se",
+  manual: "čeká na zápis",
+  interrupted: "přerušeno",
+};
 
 async function renderList() {
   const recs = (await allRecs()).sort((a, b) => b.created.localeCompare(a.created));
@@ -682,31 +814,40 @@ async function renderList() {
 // běžela hned v rámci klepnutí – Safari to po čekání na databázi nedovolí.
 let currentId = null;
 let currentRec = null;
-let audioUrl = null;
+let audioUrls = [];
 
-async function openDetail(id) {
-  const rec = await getRec(id);
+// rec: nahrávka už držená v paměti (aby se změny v ní hned projevily v detailu).
+async function openDetail(id, rec) {
+  rec = rec || (await getRec(id));
   if (!rec) return;
   currentId = id;
-  if (audioUrl) URL.revokeObjectURL(audioUrl);
-  audioUrl = rec.audio ? URL.createObjectURL(rec.audio) : null;
-  $("#dAudio").src = audioUrl || "";
+  renderAudio(rec);
   showTab("notes");
   renderDetail(rec);
   $("#detail").hidden = false;
   $("#detail").scrollTop = 0;
 }
 
+function renderAudio(rec) {
+  audioUrls.forEach((u) => URL.revokeObjectURL(u));
+  const parts = recParts(rec);
+  audioUrls = parts.map((p) => URL.createObjectURL(p));
+  $("#dAudios").innerHTML = audioUrls.map((u, i) => `
+    ${parts.length > 1 ? `<div class="muted">Část ${i + 1}</div>` : ""}
+    <audio controls preload="metadata" src="${u}"></audio>`).join("");
+}
+
 function closeDetail() {
   currentId = null;
   currentRec = null;
   $("#detail").hidden = true;
-  $("#dAudio").pause();
+  document.querySelectorAll("#dAudios audio").forEach((a) => a.pause());
   renderList();
 }
 
 const STATUS_TEXT = {
   manual: "Přepis je hotový. Klepněte na 1. – přepis se zkopíruje a otevře se Claude. Tam ho vložte, a hotový zápis zkopírujte zpět tlačítkem 2.",
+  interrupted: "Nahrávání se přerušilo (zamčení telefonu nebo hovor). Zvuk do té chvíle je uložený. Můžete pokračovat ve stejné nahrávce, nebo ji dokončit a zpracovat.",
 };
 
 function renderDetail(rec) {
@@ -715,16 +856,19 @@ function renderDetail(rec) {
   const created = new Date(rec.created);
   $("#dMeta").textContent = [created.toLocaleString("cs-CZ"), rec.place, rec.duration ? clock(rec.duration) : ""].filter(Boolean).join(" · ");
   const status = $("#dStatus");
-  const showStatus = ["processing", "error", "manual"].includes(rec.status);
-  status.hidden = !showStatus;
+  status.hidden = !["processing", "error", "manual", "interrupted"].includes(rec.status);
   status.classList.toggle("error", rec.status === "error");
   status.textContent = rec.status === "error" ? rec.error : STATUS_TEXT[rec.status] || rec.progress || "Zpracovávám…";
+  const busy = processing.has(rec.id);
+  const canContinue = rec.source === "mic" && !busy && !session && rec.status !== "processing";
+  $("#resumeBox").hidden = !canContinue;
+  $("#btnFinish").hidden = rec.status !== "interrupted";
+  $("#btnContinue").classList.toggle("secondary", rec.status !== "interrupted");
   const manual = !!rec.transcript && (rec.status === "manual" || loadSettings().notesProvider === "claude-manual");
   $("#manualBox").hidden = !manual;
   $("#dNotes").textContent = rec.notes || (rec.status === "processing" ? "Zápis se připravuje…" : "Zápis zatím není.");
-  $("#dTranscript").textContent = rec.transcript || "Přepis zatím není.";
-  const busy = processing.has(rec.id);
-  $("#btnRedo").disabled = busy;
+  $("#dTranscript").textContent = rec.transcript || rec.live || "Přepis zatím není.";
+  $("#btnRedo").disabled = busy || rec.status === "interrupted";
   $("#btnEmail").disabled = !rec.notes || busy;
   $("#btnCopy").disabled = !rec.notes;
 }
@@ -748,10 +892,9 @@ function emailRec(rec) {
 
 async function shareRec(rec) {
   const data = { title: rec.name, text: rec.notes || rec.transcript || rec.name };
-  if (rec.audio) {
-    const file = new File([rec.audio], fileNameFor(rec), { type: rec.audio.type || rec.mime });
-    if (navigator.canShare?.({ files: [file] })) data.files = [file];
-  }
+  const parts = recParts(rec);
+  const files = parts.map((p, i) => new File([p], fileNameFor(rec, i, parts.length), { type: p.type || rec.mime }));
+  if (files.length && navigator.canShare?.({ files })) data.files = files;
   if (!navigator.share) return toast("Sdílení tento prohlížeč neumí.");
   try {
     await navigator.share(data);
@@ -761,11 +904,14 @@ async function shareRec(rec) {
 }
 
 function downloadRec(rec) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(rec.audio);
-  a.download = fileNameFor(rec);
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  const parts = recParts(rec);
+  parts.forEach((p, i) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(p);
+    a.download = fileNameFor(rec, i, parts.length);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
 }
 
 function openInClaude(rec) {
@@ -790,10 +936,19 @@ async function pasteNotes(rec) {
   toast("Zápis vložen.");
 }
 
+async function continueRecording(rec) {
+  if (session) return toast("Už se nahrává.");
+  closeDetail();
+  window.scrollTo(0, 0);
+  await startRecording(rec);
+}
+
 // ---------- události ----------
 
 function bind() {
-  $("#btnRecord").addEventListener("click", () => (session ? stopRecording() : startRecording()));
+  $("#btnRecord").addEventListener("click", () => (session ? finishRecording(session, false) : startRecording()));
+  $("#btnDark").addEventListener("click", () => ($("#dark").hidden = false));
+  $("#dark").addEventListener("click", () => ($("#dark").hidden = true));
   $("#fileImport").addEventListener("change", (e) => {
     const f = e.target.files[0];
     e.target.value = "";
@@ -806,6 +961,8 @@ function bind() {
   $("#btnBack").addEventListener("click", closeDetail);
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
 
+  $("#btnContinue").addEventListener("click", () => currentRec && continueRecording(currentRec));
+  $("#btnFinish").addEventListener("click", () => currentRec && processRecording(currentRec));
   $("#btnEmail").addEventListener("click", () => currentRec?.notes && emailRec(currentRec));
   $("#btnShare").addEventListener("click", () => currentRec && shareRec(currentRec));
   $("#btnCopy").addEventListener("click", () => {
@@ -816,8 +973,8 @@ function bind() {
   });
   $("#btnClaude").addEventListener("click", () => currentRec && openInClaude(currentRec));
   $("#btnPaste").addEventListener("click", () => currentRec && pasteNotes(currentRec));
-  $("#btnDownload").addEventListener("click", () => currentRec?.audio && downloadRec(currentRec));
-  $("#btnRedo").addEventListener("click", () => currentRec && processRecording(currentRec));
+  $("#btnDownload").addEventListener("click", () => currentRec && downloadRec(currentRec));
+  $("#btnRedo").addEventListener("click", () => currentRec && processRecording(currentRec, { redo: true }));
   $("#btnDelete").addEventListener("click", async () => {
     const rec = currentRec;
     if (rec && confirm(`Smazat nahrávku „${rec.name}“ včetně zápisu?`)) {
@@ -853,15 +1010,25 @@ function bind() {
 async function init() {
   db = await openDB();
   bind();
-  // Nahrávky přerušené zavřením aplikace dokončíme, ostatní nedokončené označíme.
+  // Nahrávání ukončené zavřením aplikace obnovíme z uložených kousků;
+  // rozpracované zpracování dokončíme.
+  let recovered = null;
   for (const rec of await allRecs()) {
-    if (rec.status === "processing" || rec.status === "recording") {
-      if (rec.audio && rec.audio.size) processRecording(rec);
-      else await putRec({ ...rec, status: "error", error: "Nahrávání bylo přerušeno, zvuk se neuložil." });
+    if (rec.status === "recording") {
+      await recoverRecording(rec);
+      if (rec.status === "interrupted") recovered = rec;
+    } else if (rec.status === "processing") {
+      if (recParts(rec).length) processRecording(rec);
+      else await putRec({ ...rec, status: "error", error: "Zvuk se neuložil." });
     }
   }
   await renderList();
-  if (missingKeys()) toast("Nejdřív v Nastavení (⚙︎) vložte API klíče.");
+  if (recovered) {
+    openDetail(recovered.id);
+    toast("Nahrávání se přerušilo. Zvuk je uložený – můžete pokračovat.");
+  } else if (missingKeys()) {
+    toast("Nejdřív v Nastavení (⚙︎) vložte API klíče.");
+  }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
