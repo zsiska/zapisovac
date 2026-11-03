@@ -1,0 +1,54 @@
+# Sestaví nepodepsanou aplikaci pro iPhone (.ipa). Podepíše ji až AltStore
+# vaším Apple ID při instalaci. Výsledek je ke stažení v Releases pod „ios-latest“.
+name: iOS build
+
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Build
+        run: |
+          cd ios
+          xcodebuild -project Zapisovac.xcodeproj -target Zapisovac \
+            -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            -quiet build
+
+      - name: Package .ipa
+        run: |
+          cd ios
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Zapisovac.app Payload/
+          zip -qry Zapisovac.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zapisovac-ipa
+          path: ios/Zapisovac.ipa
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest -y --cleanup-tag || true
+          gh release create ios-latest ios/Zapisovac.ipa \
+            --title "Zapisovač pro iPhone (sestavení ${{ github.run_number }})" \
+            --notes "Instalace přes AltStore: stáhněte Zapisovac.ipa v Safari na iPhonu, pak v AltStore → My Apps → + a vyberte soubor." \
+            --latest=false
