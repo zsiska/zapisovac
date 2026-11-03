@@ -3,15 +3,30 @@
 
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.137.0/+esm";
 const NOTES_MODEL = "claude-opus-5-5";
-const STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
-const SEGMENT_SECONDS = 20; // délka úseku pro průběžný přepis
+const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+const GROQ_MODEL = "whisper-large-v3";
+const ELEVEN_URL = "https://api.elevenlabs.io/v1/speech-to-text";
+const ELEVEN_MODEL = "scribe_v2";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const SEGMENT_SECONDS = 20;          // délka úseku pro průběžný přepis
+const MAX_UPLOAD = 24 * 1024 * 1024; // Groq zdarma bere soubory do 25 MB
+const CHUNK_SECONDS = 600;           // delší soubory se dělí na 10min části
 
 const $ = (s) => document.querySelector(s);
 
 // ---------- nastavení ----------
 
 const SETTINGS_KEY = "zapisovac.settings";
-const DEFAULTS = { elevenKey: "", anthropicKey: "", email: "zsiska@seznam.cz", transcribeModel: "scribe_v2" };
+const DEFAULTS = {
+  sttProvider: "groq",
+  groqKey: "",
+  elevenKey: "",
+  notesProvider: "gemini",
+  geminiKey: "",
+  geminiModel: "gemini-3.6-flash",
+  anthropicKey: "",
+  email: "zsiska@seznam.cz",
+};
 
 function loadSettings() {
   try {
@@ -27,6 +42,16 @@ function saveSettings(s) {
   } catch {
     toast("Nastavení se nepodařilo uložit.");
   }
+}
+
+function sttKey(st = loadSettings()) {
+  return st.sttProvider === "elevenlabs" ? st.elevenKey : st.groqKey;
+}
+
+function missingKeys(st = loadSettings()) {
+  return !sttKey(st)
+    || (st.notesProvider === "gemini" && !st.geminiKey)
+    || (st.notesProvider === "anthropic" && !st.anthropicKey);
 }
 
 // ---------- úložiště ----------
@@ -124,28 +149,57 @@ async function placeName(c) {
   }
 }
 
-// ---------- přepis (ElevenLabs Scribe) ----------
+// ---------- přepis ----------
 
-// Jazyk se nezadává – Scribe sám pozná češtinu i slovenštinu (i když se střídají).
-// diarize: rozliší mluvčí; používá se pro finální přepis celé nahrávky.
-async function transcribe(blob, { diarize = false } = {}) {
-  const st = loadSettings();
-  if (!st.elevenKey) throw new Error("Chybí ElevenLabs API klíč – doplňte ho v Nastavení.");
-  const fd = new FormData();
-  fd.append("file", blob, "audio." + extFor(blob.type));
-  fd.append("model_id", st.transcribeModel || DEFAULTS.transcribeModel);
-  fd.append("tag_audio_events", "false");
-  if (diarize) fd.append("diarize", "true");
+async function postForm(url, headers, fd, service) {
   let res;
   try {
-    res = await fetch(STT_URL, { method: "POST", headers: { "xi-api-key": st.elevenKey }, body: fd });
+    res = await fetch(url, { method: "POST", headers, body: fd });
   } catch {
     throw new Error("Přepis selhal: nejste připojeni k internetu.");
   }
-  if (res.status === 401) throw new Error("Přepis selhal: neplatný ElevenLabs klíč.");
+  if (res.status === 401) throw new Error(`Přepis selhal: neplatný ${service} klíč.`);
+  if (res.status === 429) throw new Error(`Přepis selhal: vyčerpaný limit ${service}, zkuste to později.`);
   if (!res.ok) throw new Error(`Přepis selhal (${res.status}): ${(await res.text()).slice(0, 200)}`);
-  const data = await res.json();
+  return res.json();
+}
+
+// Whisper si v tichu občas „vymyslí“ titulky – takové úseky zahodíme.
+const HALLUCINATION = /titulky|subtitles|www\.|děkuji za pozornost|ďakujem za pozornosť/i;
+
+// Jazyk se nezadává, aby šla čeština i slovenština; nápověda ho jen naznačí.
+async function transcribeGroq(blob, st) {
+  if (!st.groqKey) throw new Error("Chybí Groq API klíč – doplňte ho v Nastavení.");
+  const fd = new FormData();
+  fd.append("file", blob, "audio." + extFor(blob.type));
+  fd.append("model", GROQ_MODEL);
+  fd.append("response_format", "verbose_json");
+  fd.append("temperature", "0");
+  fd.append("prompt", "Pracovní schůzka v češtině, případně ve slovenčine.");
+  const data = await postForm(GROQ_URL, { Authorization: `Bearer ${st.groqKey}` }, fd, "Groq");
+  if (!data.segments) return (data.text || "").trim();
+  return data.segments
+    .filter((s) => (s.no_speech_prob ?? 0) < 0.6 && !HALLUCINATION.test(s.text))
+    .map((s) => s.text.trim())
+    .join(" ")
+    .trim();
+}
+
+// diarize: rozliší mluvčí; používá se pro finální přepis celé nahrávky.
+async function transcribeEleven(blob, st, diarize) {
+  if (!st.elevenKey) throw new Error("Chybí ElevenLabs API klíč – doplňte ho v Nastavení.");
+  const fd = new FormData();
+  fd.append("file", blob, "audio." + extFor(blob.type));
+  fd.append("model_id", ELEVEN_MODEL);
+  fd.append("tag_audio_events", "false");
+  if (diarize) fd.append("diarize", "true");
+  const data = await postForm(ELEVEN_URL, { "xi-api-key": st.elevenKey }, fd, "ElevenLabs");
   return diarize ? withSpeakers(data) : (data.text || "").trim();
+}
+
+function transcribe(blob, { diarize = false } = {}) {
+  const st = loadSettings();
+  return st.sttProvider === "elevenlabs" ? transcribeEleven(blob, st, diarize) : transcribeGroq(blob, st);
 }
 
 // Poskládá slova do odstavců „Mluvčí N: …“ podle speaker_id.
@@ -168,9 +222,72 @@ function withSpeakers(data) {
   return lines.join("\n\n");
 }
 
-// ---------- zápis ze schůzky (Claude) ----------
+// Celá nahrávka: ElevenLabs vezme cokoli najednou, pro Groq se velký soubor
+// rozdělí na části ve WAV (16 kHz mono).
+async function transcribeFile(blob, onProgress) {
+  if (loadSettings().sttProvider === "elevenlabs") {
+    onProgress("Přepisuji celou nahrávku a rozlišuji mluvčí…");
+    return transcribe(blob, { diarize: true });
+  }
+  if (blob.size <= MAX_UPLOAD) {
+    onProgress("Přepisuji nahrávku…");
+    return transcribe(blob);
+  }
+  onProgress("Připravuji dlouhou nahrávku…");
+  const parts = await splitToWav(blob, CHUNK_SECONDS);
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    onProgress(`Přepisuji část ${i + 1} z ${parts.length}…`);
+    out.push(await transcribe(parts[i]));
+  }
+  return out.join(" ");
+}
 
-const NOTES_SYSTEM = `Jsi pečlivý zapisovatel porad. Dostaneš automatický přepis řeči ze schůzky nebo telefonního hovoru, v češtině nebo slovenštině (i střídavě). Přepis může obsahovat chyby rozpoznávání; mluvčí bývají označeni „Mluvčí 1“, „Mluvčí 2“ atd. – pokud z obsahu vyplyne jejich jméno nebo role, použij ho. Zápis piš vždy česky.
+async function splitToWav(blob, seconds) {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const ac = new Ctx();
+  const decoded = await ac.decodeAudioData(await blob.arrayBuffer());
+  ac.close();
+  const rate = 16000;
+  const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const mono = (await off.startRendering()).getChannelData(0);
+  const step = seconds * rate;
+  const parts = [];
+  for (let i = 0; i < mono.length; i += step) parts.push(encodeWav(mono.subarray(i, i + step), rate));
+  return parts;
+}
+
+function encodeWav(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  w(0, "RIFF");
+  v.setUint32(4, 36 + samples.length * 2, true);
+  w(8, "WAVE");
+  w(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  w(36, "data");
+  v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// ---------- zápis ze schůzky ----------
+
+const NOTES_SYSTEM = `Jsi pečlivý zapisovatel porad. Dostaneš automatický přepis řeči ze schůzky nebo telefonního hovoru, v češtině nebo slovenštině (i střídavě). Přepis může obsahovat chyby rozpoznávání; mluvčí mohou být označeni „Mluvčí 1“, „Mluvčí 2“ atd. – pokud z obsahu vyplyne jejich jméno nebo role, použij ho. Zápis piš vždy česky.
 
 Vytvoř z něj podrobný zápis v češtině. Výstup bude vložen přímo do e-mailu, proto piš prostý text bez Markdownu (žádné #, ** ani tabulky); nadpisy piš VELKÝMI PÍSMENY, odrážky pomlčkou.
 
@@ -188,17 +305,75 @@ OTEVŘENÉ OTÁZKY
 
 Sekce, ke kterým přepis nic neobsahuje, vynech. Pokud jde o krátkou poznámku nebo hovor, přizpůsob rozsah. Nevymýšlej nic, co v přepisu není; nejasná místa označ [nejasné].`;
 
-async function makeNotes(rec, onText) {
+function notesInput(rec) {
+  const info = [
+    `Datum a čas: ${new Date(rec.created).toLocaleString("cs-CZ")}`,
+    `Místo: ${rec.place || "neuvedeno"}`,
+    `Délka: ${rec.duration ? clock(rec.duration) : "neuvedeno"}`,
+  ].join("\n");
+  return `${info}\n\n<prepis>\n${rec.transcript}\n</prepis>`;
+}
+
+async function makeNotesGemini(rec, onText) {
+  const st = loadSettings();
+  if (!st.geminiKey) throw new Error("Chybí Gemini API klíč – doplňte ho v Nastavení.");
+  const model = st.geminiModel || DEFAULTS.geminiModel;
+  let res;
+  try {
+    res = await fetch(`${GEMINI_URL}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+      method: "POST",
+      headers: { "x-goog-api-key": st.geminiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: NOTES_SYSTEM }] },
+        contents: [{ role: "user", parts: [{ text: notesInput(rec) }] }],
+        generationConfig: { maxOutputTokens: 32768 },
+      }),
+    });
+  } catch {
+    throw new Error("Zápis selhal: nejste připojeni k internetu.");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    if (/API_KEY_INVALID|API key not valid/.test(body)) throw new Error("Zápis selhal: neplatný Gemini klíč.");
+    if (res.status === 429) throw new Error("Zápis selhal: vyčerpaný bezplatný limit Gemini, zkuste to později.");
+    if (res.status === 404) throw new Error(`Zápis selhal: model „${model}“ neexistuje – změňte ho v Nastavení.`);
+    throw new Error(`Zápis selhal (${res.status}): ${body.slice(0, 200)}`);
+  }
+  // Odpověď chodí jako SSE: řádky „data: {json}“.
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  let text = "";
+  let finish = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const cand = JSON.parse(line.slice(5)).candidates?.[0];
+      for (const p of cand?.content?.parts || []) {
+        if (p.text && !p.thought) {
+          text += p.text;
+          onText(text);
+        }
+      }
+      if (cand?.finishReason) finish = cand.finishReason;
+    }
+  }
+  if (!text) {
+    throw new Error(/SAFETY|PROHIBITED/.test(finish) ? "Gemini odmítl tento přepis zpracovat." : "Gemini nevrátil žádný text.");
+  }
+  return text.trim();
+}
+
+async function makeNotesClaude(rec, onText) {
   const st = loadSettings();
   if (!st.anthropicKey) throw new Error("Chybí Anthropic API klíč – doplňte ho v Nastavení.");
   const { default: Anthropic } = await import(SDK_URL);
   const client = new Anthropic({ apiKey: st.anthropicKey, dangerouslyAllowBrowser: true });
-  const created = new Date(rec.created);
-  const info = [
-    `Datum a čas: ${created.toLocaleString("cs-CZ")}`,
-    `Místo: ${rec.place || "neuvedeno"}`,
-    `Délka: ${rec.duration ? clock(rec.duration) : "neuvedeno"}`,
-  ].join("\n");
   try {
     const stream = client.beta.messages.stream({
       model: NOTES_MODEL,
@@ -208,7 +383,7 @@ async function makeNotes(rec, onText) {
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },
       system: NOTES_SYSTEM,
-      messages: [{ role: "user", content: `${info}\n\n<prepis>\n${rec.transcript}\n</prepis>` }],
+      messages: [{ role: "user", content: notesInput(rec) }],
     });
     let text = "";
     stream.on("text", (delta) => {
@@ -227,12 +402,17 @@ async function makeNotes(rec, onText) {
   }
 }
 
+function makeNotes(rec, onText) {
+  return loadSettings().notesProvider === "anthropic" ? makeNotesClaude(rec, onText) : makeNotesGemini(rec, onText);
+}
+
 // ---------- zpracování nahrávky ----------
 
 const processing = new Set();
 
-// Finální přepis vždy z celé nahrávky (přesnější, s rozlišením mluvčích).
-// liveText = průběžný přepis z nahrávání, použije se jen když finální přepis selže.
+// liveText = průběžný přepis z nahrávání. U Groq se rovnou použije (šetří
+// bezplatný limit); u ElevenLabs se celá nahrávka přepíše znovu s mluvčími
+// a průběžný přepis slouží jen jako záloha.
 async function processRecording(rec, liveText = "") {
   if (processing.has(rec.id)) return;
   processing.add(rec.id);
@@ -242,16 +422,25 @@ async function processRecording(rec, liveText = "") {
     refresh(rec);
   };
   try {
-    await update({ status: "processing", error: "", progress: "Přepisuji celou nahrávku a rozlišuji mluvčí…" });
-    try {
-      await update({ transcript: await transcribe(rec.audio, { diarize: true }) });
-    } catch (err) {
-      if (!liveText) throw err;
+    const st = loadSettings();
+    await update({ status: "processing", error: "" });
+    if (liveText && st.sttProvider !== "elevenlabs") {
       await update({ transcript: liveText });
-      toast("Finální přepis selhal, použiji průběžný.");
+    } else {
+      try {
+        await update({ transcript: await transcribeFile(rec.audio, (p) => update({ progress: p })) });
+      } catch (err) {
+        if (!liveText) throw err;
+        await update({ transcript: liveText });
+        toast("Finální přepis selhal, použiji průběžný.");
+      }
     }
     if (!rec.transcript) throw new Error("V nahrávce nebyla rozpoznána žádná řeč.");
-    await update({ status: "processing", progress: "Píšu zápis ze schůzky…", notes: "" });
+    if (st.notesProvider === "claude-manual") {
+      await update({ status: "manual", progress: "" });
+      return;
+    }
+    await update({ progress: "Píšu zápis ze schůzky…", notes: "" });
     let last = 0;
     const notes = await makeNotes(rec, (t) => {
       rec.notes = t;
@@ -260,7 +449,7 @@ async function processRecording(rec, liveText = "") {
         refresh(rec);
       }
     });
-    await update({ notes, status: "done", progress: "", error: "" });
+    await update({ notes, status: "done", progress: "" });
     if (currentId === rec.id) toast("Zápis je hotový.");
   } catch (err) {
     await update({ status: "error", progress: "", error: err.message || String(err) });
@@ -325,7 +514,7 @@ async function startRecording() {
   requestWakeLock();
   setRecordingUI(true);
   $("#recName").textContent = rec.name;
-  $("#live").textContent = loadSettings().elevenKey ? "Průběžný přepis se objeví za pár vteřin…" : "Průběžný přepis je vypnutý – chybí ElevenLabs klíč.";
+  $("#live").textContent = sttKey() ? "Průběžný přepis se objeví za pár vteřin…" : "Průběžný přepis je vypnutý – chybí klíč pro přepis.";
 
   getPosition().then(async (c) => {
     if (!c) return;
@@ -357,7 +546,7 @@ function rotateSegment(s) {
 }
 
 function queueSegment(s, idx, blob) {
-  if (!loadSettings().elevenKey) {
+  if (!sttKey()) {
     s.failed = true;
     return;
   }
@@ -477,7 +666,7 @@ function audioDuration(blob) {
 
 // ---------- seznam a detail ----------
 
-const STATUS_LABEL = { processing: "zpracovává se…", error: "chyba", recording: "nahrává se" };
+const STATUS_LABEL = { processing: "zpracovává se…", error: "chyba", recording: "nahrává se", manual: "čeká na zápis" };
 
 async function renderList() {
   const recs = (await allRecs()).sort((a, b) => b.created.localeCompare(a.created));
@@ -489,7 +678,10 @@ async function renderList() {
     </li>`).join("");
 }
 
+// Otevřená nahrávka je držená v paměti, aby tlačítka (sdílení, schránka)
+// běžela hned v rámci klepnutí – Safari to po čekání na databázi nedovolí.
 let currentId = null;
+let currentRec = null;
 let audioUrl = null;
 
 async function openDetail(id) {
@@ -507,19 +699,28 @@ async function openDetail(id) {
 
 function closeDetail() {
   currentId = null;
+  currentRec = null;
   $("#detail").hidden = true;
   $("#dAudio").pause();
   renderList();
 }
 
+const STATUS_TEXT = {
+  manual: "Přepis je hotový. Klepněte na 1. – přepis se zkopíruje a otevře se Claude. Tam ho vložte, a hotový zápis zkopírujte zpět tlačítkem 2.",
+};
+
 function renderDetail(rec) {
+  currentRec = rec;
   $("#dTitle").textContent = rec.name;
   const created = new Date(rec.created);
   $("#dMeta").textContent = [created.toLocaleString("cs-CZ"), rec.place, rec.duration ? clock(rec.duration) : ""].filter(Boolean).join(" · ");
   const status = $("#dStatus");
-  status.hidden = rec.status !== "processing" && rec.status !== "error";
+  const showStatus = ["processing", "error", "manual"].includes(rec.status);
+  status.hidden = !showStatus;
   status.classList.toggle("error", rec.status === "error");
-  status.textContent = rec.status === "error" ? rec.error : rec.progress || "Zpracovávám…";
+  status.textContent = rec.status === "error" ? rec.error : STATUS_TEXT[rec.status] || rec.progress || "Zpracovávám…";
+  const manual = !!rec.transcript && (rec.status === "manual" || loadSettings().notesProvider === "claude-manual");
+  $("#manualBox").hidden = !manual;
   $("#dNotes").textContent = rec.notes || (rec.status === "processing" ? "Zápis se připravuje…" : "Zápis zatím není.");
   $("#dTranscript").textContent = rec.transcript || "Přepis zatím není.";
   const busy = processing.has(rec.id);
@@ -537,10 +738,6 @@ function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   $("#dNotes").hidden = name !== "notes";
   $("#dTranscript").hidden = name !== "transcript";
-}
-
-async function current() {
-  return currentId ? getRec(currentId) : null;
 }
 
 function emailRec(rec) {
@@ -571,6 +768,28 @@ function downloadRec(rec) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+function openInClaude(rec) {
+  navigator.clipboard.writeText(`${NOTES_SYSTEM}\n\n${notesInput(rec)}`).then(
+    () => toast("Zkopírováno. V Claude dlouze podržte pole zprávy a dejte Vložit."),
+    () => toast("Kopírování se nepodařilo."),
+  );
+  window.open("https://claude.ai/new", "_blank");
+}
+
+async function pasteNotes(rec) {
+  let text = "";
+  try {
+    text = (await navigator.clipboard.readText()).trim();
+  } catch {
+    return toast("Schránku se nepodařilo přečíst.");
+  }
+  if (!text || text.includes("<prepis>")) return toast("Ve schránce není hotový zápis. V Claude ho nejdřív zkopírujte.");
+  Object.assign(rec, { notes: text, status: "done" });
+  await putRec(rec);
+  refresh(rec);
+  toast("Zápis vložen.");
+}
+
 // ---------- události ----------
 
 function bind() {
@@ -587,33 +806,20 @@ function bind() {
   $("#btnBack").addEventListener("click", closeDetail);
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
 
-  $("#btnEmail").addEventListener("click", async () => {
-    const rec = await current();
-    if (rec?.notes) emailRec(rec);
+  $("#btnEmail").addEventListener("click", () => currentRec?.notes && emailRec(currentRec));
+  $("#btnShare").addEventListener("click", () => currentRec && shareRec(currentRec));
+  $("#btnCopy").addEventListener("click", () => {
+    navigator.clipboard.writeText(currentRec.notes).then(
+      () => toast("Zápis zkopírován."),
+      () => toast("Kopírování se nepodařilo."),
+    );
   });
-  $("#btnShare").addEventListener("click", async () => {
-    const rec = await current();
-    if (rec) shareRec(rec);
-  });
-  $("#btnCopy").addEventListener("click", async () => {
-    const rec = await current();
-    try {
-      await navigator.clipboard.writeText(rec.notes);
-      toast("Zápis zkopírován.");
-    } catch {
-      toast("Kopírování se nepodařilo.");
-    }
-  });
-  $("#btnDownload").addEventListener("click", async () => {
-    const rec = await current();
-    if (rec?.audio) downloadRec(rec);
-  });
-  $("#btnRedo").addEventListener("click", async () => {
-    const rec = await current();
-    if (rec) processRecording(rec);
-  });
+  $("#btnClaude").addEventListener("click", () => currentRec && openInClaude(currentRec));
+  $("#btnPaste").addEventListener("click", () => currentRec && pasteNotes(currentRec));
+  $("#btnDownload").addEventListener("click", () => currentRec?.audio && downloadRec(currentRec));
+  $("#btnRedo").addEventListener("click", () => currentRec && processRecording(currentRec));
   $("#btnDelete").addEventListener("click", async () => {
-    const rec = await current();
+    const rec = currentRec;
     if (rec && confirm(`Smazat nahrávku „${rec.name}“ včetně zápisu?`)) {
       await deleteRec(rec.id);
       closeDetail();
@@ -622,9 +828,17 @@ function bind() {
 
   const dlg = $("#settings");
   const form = $("#settingsForm");
+  const syncFields = () => {
+    form.querySelectorAll("[data-show]").forEach((el) => {
+      const [name, value] = el.dataset.show.split("=");
+      el.hidden = form.elements[name].value !== value;
+    });
+  };
+  form.addEventListener("change", syncFields);
   $("#btnSettings").addEventListener("click", () => {
     const st = loadSettings();
     for (const k of Object.keys(DEFAULTS)) form.elements[k].value = st[k];
+    syncFields();
     dlg.showModal();
   });
   dlg.addEventListener("close", () => {
@@ -647,7 +861,7 @@ async function init() {
     }
   }
   await renderList();
-  if (!loadSettings().elevenKey || !loadSettings().anthropicKey) toast("Nejdřív v Nastavení (⚙︎) vložte API klíče.");
+  if (missingKeys()) toast("Nejdřív v Nastavení (⚙︎) vložte API klíče.");
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 

@@ -54,6 +54,10 @@
       <p id="dMeta" class="muted"></p>
       <audio id="dAudio" controls preload="metadata"></audio>
       <p id="dStatus" class="status" hidden></p>
+      <div id="manualBox" class="actions" hidden>
+        <button id="btnClaude" class="btn">1. Napsat zápis v aplikaci Claude</button>
+        <button id="btnPaste" class="btn secondary">2. Vložit hotový zápis ze schránky</button>
+      </div>
       <div class="actions">
         <button id="btnEmail" class="btn">Poslat e-mailem</button>
         <button id="btnShare" class="btn secondary">Sdílet (i se zvukem)</button>
@@ -76,19 +80,41 @@
   <dialog id="settings">
     <form method="dialog" id="settingsForm">
       <h2>Nastavení</h2>
-      <label>ElevenLabs API klíč (přepis řeči)
+      <label>Přepis řeči
+        <select name="sttProvider">
+          <option value="groq">Groq Whisper – zdarma</option>
+          <option value="elevenlabs">ElevenLabs – placené, nejpřesnější, rozliší mluvčí</option>
+        </select>
+      </label>
+      <label data-show="sttProvider=groq">Groq API klíč
+        <input name="groqKey" type="password" autocomplete="off" placeholder="gsk_…">
+      </label>
+      <label data-show="sttProvider=elevenlabs">ElevenLabs API klíč
         <input name="elevenKey" type="password" autocomplete="off" placeholder="sk_…">
       </label>
-      <label>Anthropic API klíč (zápis ze schůzky)
+
+      <label>Zápis ze schůzky
+        <select name="notesProvider">
+          <option value="gemini">Google Gemini – zdarma, automaticky</option>
+          <option value="claude-manual">Aplikace Claude – zdarma, ručně</option>
+          <option value="anthropic">Claude API – placené, automaticky</option>
+        </select>
+      </label>
+      <p data-show="notesProvider=gemini" class="muted">V bezplatné verzi může Google obsah přepisů použít ke zlepšování svých služeb.</p>
+      <label data-show="notesProvider=gemini">Gemini API klíč
+        <input name="geminiKey" type="password" autocomplete="off" placeholder="AIza…">
+      </label>
+      <label data-show="notesProvider=gemini">Model Gemini
+        <input name="geminiModel" type="text" autocomplete="off">
+      </label>
+      <label data-show="notesProvider=anthropic">Anthropic API klíč
         <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
+
       <label>E-mail pro zápisy
         <input name="email" type="email" placeholder="vas@email.cz">
       </label>
-      <label>Model přepisu
-        <input name="transcribeModel" type="text">
-      </label>
-      <p class="muted">Klíče se ukládají jen v tomto telefonu a posílají se pouze přímo službám ElevenLabs a Anthropic.</p>
+      <p class="muted">Klíče se ukládají jen v tomto telefonu a posílají se pouze přímo zvoleným službám.</p>
       <div class="actions">
         <button value="cancel" class="btn secondary">Zrušit</button>
         <button value="save" class="btn">Uložit</button>
