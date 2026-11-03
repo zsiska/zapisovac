@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Zapisovač</title>
+  <meta name="description" content="Nahrávání schůzek s přepisem a automatickým zápisem">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Zapisovač">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Zapisovač</h1>
+    <button id="btnSettings" class="icon" aria-label="Nastavení">⚙︎</button>
+  </header>
+
+  <main id="home">
+    <section class="recorder">
+      <button id="btnRecord" class="record" aria-label="Spustit nahrávání"><span></span></button>
+      <div id="timer" class="timer">00:00</div>
+      <div id="recName" class="rec-name">Stiskněte pro nahrávání</div>
+      <p id="recHint" class="hint" hidden>Nechte aplikaci otevřenou. Displej zůstane rozsvícený.</p>
+      <div id="live" class="live" hidden></div>
+    </section>
+
+    <section class="import">
+      <label class="btn secondary">
+        Importovat nahrávku (např. hovor)
+        <input id="fileImport" type="file" accept="audio/*,.m4a,.mp3,.wav" hidden>
+      </label>
+    </section>
+
+    <section>
+      <h2>Nahrávky</h2>
+      <ul id="list" class="list"></ul>
+      <p id="empty" class="muted">Zatím žádné nahrávky.</p>
+    </section>
+  </main>
+
+  <section id="detail" class="detail" hidden>
+    <header class="top">
+      <button id="btnBack" class="icon" aria-label="Zpět">‹</button>
+      <h1 id="dTitle"></h1>
+      <span></span>
+    </header>
+    <div class="detail-body">
+      <p id="dMeta" class="muted"></p>
+      <audio id="dAudio" controls preload="metadata"></audio>
+      <p id="dStatus" class="status" hidden></p>
+      <div class="actions">
+        <button id="btnEmail" class="btn">Poslat e-mailem</button>
+        <button id="btnShare" class="btn secondary">Sdílet (i se zvukem)</button>
+        <button id="btnCopy" class="btn secondary">Kopírovat zápis</button>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="notes">Zápis</button>
+        <button class="tab" data-tab="transcript">Přepis</button>
+      </div>
+      <pre id="dNotes" class="text"></pre>
+      <pre id="dTranscript" class="text" hidden></pre>
+      <div class="actions small">
+        <button id="btnDownload" class="btn secondary">Stáhnout zvuk</button>
+        <button id="btnRedo" class="btn secondary">Zpracovat znovu</button>
+        <button id="btnDelete" class="btn danger">Smazat</button>
+      </div>
+    </div>
+  </section>
+
+  <dialog id="settings">
+    <form method="dialog" id="settingsForm">
+      <h2>Nastavení</h2>
+      <label>ElevenLabs API klíč (přepis řeči)
+        <input name="elevenKey" type="password" autocomplete="off" placeholder="sk_…">
+      </label>
+      <label>Anthropic API klíč (zápis ze schůzky)
+        <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+      </label>
+      <label>E-mail pro zápisy
+        <input name="email" type="email" placeholder="vas@email.cz">
+      </label>
+      <label>Model přepisu
+        <input name="transcribeModel" type="text">
+      </label>
+      <p class="muted">Klíče se ukládají jen v tomto telefonu a posílají se pouze přímo službám ElevenLabs a Anthropic.</p>
+      <div class="actions">
+        <button value="cancel" class="btn secondary">Zrušit</button>
+        <button value="save" class="btn">Uložit</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
