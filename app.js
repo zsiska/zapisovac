@@ -598,16 +598,82 @@ async function llmClaude({ system, input, onText }) {
   }
 }
 
-// Kterou AI použít: zvolenou v Nastavení; v ručním režimu tu, ke které je klíč.
+// Ruční režim: zadání se zkopíruje a otevře se aplikace, kterou si uživatel
+// platí (Claude, ChatGPT); hotovou odpověď pak vloží zpět ze schránky.
+const MANUAL_APPS = {
+  "claude-manual": { name: "Claude", url: "https://claude.ai/new" },
+  "chatgpt-manual": { name: "ChatGPT", url: "https://chatgpt.com/" },
+};
+
+function manualApp(st = loadSettings()) {
+  return MANUAL_APPS[st.notesProvider] || null;
+}
+
+// Automatická AI přes API klíč; v ručním režimu null.
 function aiProvider(st = loadSettings()) {
   if (st.notesProvider === "anthropic") return st.anthropicKey ? "anthropic" : null;
   if (st.notesProvider === "gemini") return st.geminiKey ? "gemini" : null;
-  return st.geminiKey ? "gemini" : st.anthropicKey ? "anthropic" : null;
+  return null;
+}
+
+// Má se úloha poslat ručně do aplikace? (ruční režim, nebo chybí klíč)
+function goManual() {
+  return !aiProvider() && !!manualApp();
+}
+
+function copyText(text, okMsg) {
+  navigator.clipboard.writeText(text).then(
+    () => okMsg && toast(okMsg),
+    () => toast("Kopírování se nepodařilo."),
+  );
+}
+
+// job: { kind: "version" | "tasks" | "ask", prompt, label, opts? }
+// Musí běžet hned v rámci klepnutí (schránka a otevření okna).
+function manualRun(rec, job) {
+  const app = manualApp() || MANUAL_APPS["claude-manual"];
+  const prompt = `${job.prompt}\n\nOdpověz pouze samotným výsledkem, bez úvodu a závěrečných komentářů.`;
+  copyText(prompt, `Zadání zkopírováno. V aplikaci ${app.name} ho vložte do nové konverzace.`);
+  window.open(app.url, "_blank");
+  rec.pendingManual = { ...job, prompt, app: app.name, at: new Date().toISOString() };
+  putRec(rec).catch(() => {});
+  refresh(rec);
+}
+
+async function pasteManual(rec) {
+  const job = rec.pendingManual || { kind: "version", label: versionLabel(defaultOpts()), opts: defaultOpts(), app: (manualApp() || MANUAL_APPS["claude-manual"]).name };
+  let text = "";
+  try {
+    text = (await navigator.clipboard.readText()).trim();
+  } catch {
+    return toast("Schránku se nepodařilo přečíst. Povolte vložení a zkuste to znovu.");
+  }
+  if (!text || text.includes("<prepis>")) return toast(`Ve schránce není odpověď. V aplikaci ${job.app} ji nejdřív zkopírujte.`);
+  try {
+    if (job.kind === "tasks") {
+      setTasks(rec, parseJsonArray(text));
+      showTab("tasks");
+    } else if (job.kind === "ask") {
+      rec.qa = rec.qa || [];
+      rec.qa.unshift({ q: job.label, a: text, at: new Date().toISOString() });
+      showTab("ask");
+    } else {
+      addVersion(rec, job.opts || { style: "standard" }, text, job.label);
+      showTab("notes");
+    }
+  } catch (err) {
+    return toast(err.message || String(err));
+  }
+  delete rec.pendingManual;
+  if (["manual", "error"].includes(rec.status)) Object.assign(rec, { status: "done", error: "" });
+  await putRec(rec);
+  refresh(rec);
+  toast(job.kind === "tasks" ? `Vloženo úkolů: ${rec.tasks.length}` : job.kind === "ask" ? "Odpověď vložena." : "Vloženo jako nová verze.");
 }
 
 function llm({ system, input, onText = () => {}, say = () => {}, json = false }) {
   const p = aiProvider();
-  if (!p) throw new Error("Pro tuto funkci je potřeba klíč Gemini nebo Claude API – doplňte ho v Nastavení.");
+  if (!p) throw new Error("Chybí API klíč pro zvolenou AI – doplňte ho v Nastavení, nebo tam zvolte ruční režim přes Claude či ChatGPT.");
   return p === "anthropic" ? llmClaude({ system, input, onText }) : llmGemini({ system, input, onText, say, json });
 }
 
@@ -659,6 +725,14 @@ const drafts = new Map();
 async function generateVersion(rec, opts, { system, input, label } = {}) {
   if (drafts.has(rec.id) || processing.has(rec.id)) return toast("Počkejte, až se dokončí rozpracovaná verze.");
   if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
+  if (goManual()) {
+    return manualRun(rec, {
+      kind: "version",
+      prompt: `${system || styleSystem(opts)}\n\n${input || notesInput(rec)}`,
+      label: label || versionLabel(opts),
+      opts,
+    });
+  }
   const draft = { label: label || versionLabel(opts), text: "", status: "" };
   drafts.set(rec.id, draft);
   showTab("notes");
@@ -734,35 +808,45 @@ function parseJsonArray(text) {
   throw new Error("AI nevrátila platný seznam úkolů. Zkuste to znovu.");
 }
 
-async function extractTasks(rec) {
-  const key = `${rec.id}:tasks`;
-  if (ops.has(key)) return;
-  if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
-  ops.add(key);
-  refresh(rec);
+function tasksSystem(rec) {
   const day = new Date(rec.created);
-  const system = `Z přepisu schůzky vytáhni všechny úkoly – výslovně zadané i jasně vyplývající ze slibů („pošlu“, „připravím“, „ozvu se“, „zjistím“).
+  return `Z přepisu schůzky vytáhni všechny úkoly – výslovně zadané i jasně vyplývající ze slibů („pošlu“, „připravím“, „ozvu se“, „zjistím“).
 Schůzka proběhla ${day.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} (${isoDate(day)}). Relativní termíny („do pátku“, „příští týden“, „do konce měsíce“) přepočítej na konkrétní datum.
 Vrať POUZE JSON pole, nic jiného. Každý prvek:
 {"co": "konkrétní úkol, začni slovesem", "kdo": "jméno nebo role, nebo null", "termin": "YYYY-MM-DD nebo null", "termin_text": "termín tak, jak zazněl, nebo null", "priorita": "vysoká" | "střední" | "nízká"}
 Úkoly piš česky. Nevymýšlej úkoly, které z přepisu nevyplývají. Když žádné nejsou, vrať [].${glossaryRule()}`;
+}
+
+function setTasks(rec, arr) {
+  const old = new Map((rec.tasks || []).map((t) => [t.what.toLowerCase(), t.done]));
+  rec.tasks = arr
+    .map((t) => ({
+      id: rid(),
+      what: String(t.co || t.what || "").trim(),
+      who: t.kdo ? String(t.kdo) : "",
+      due: /^\d{4}-\d{2}-\d{2}$/.test(t.termin || "") ? t.termin : "",
+      dueText: t.termin_text ? String(t.termin_text) : "",
+      prio: t.priorita || "střední",
+      done: false,
+    }))
+    .filter((t) => t.what)
+    .map((t) => ({ ...t, done: old.get(t.what.toLowerCase()) || false }))
+    .sort((x, y) => (x.due || "9999").localeCompare(y.due || "9999"));
+  rec.tasksAt = new Date().toISOString();
+}
+
+async function extractTasks(rec) {
+  const key = `${rec.id}:tasks`;
+  if (ops.has(key)) return;
+  if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
+  if (goManual()) {
+    return manualRun(rec, { kind: "tasks", prompt: `${tasksSystem(rec)}\n\n${notesInput(rec)}`, label: "Úkoly ze schůzky" });
+  }
+  ops.add(key);
+  refresh(rec);
   try {
-    const text = await llm({ system, input: notesInput(rec), json: true });
-    const old = new Map((rec.tasks || []).map((t) => [t.what.toLowerCase(), t.done]));
-    rec.tasks = parseJsonArray(text)
-      .map((t) => ({
-        id: rid(),
-        what: String(t.co || "").trim(),
-        who: t.kdo ? String(t.kdo) : "",
-        due: /^\d{4}-\d{2}-\d{2}$/.test(t.termin || "") ? t.termin : "",
-        dueText: t.termin_text ? String(t.termin_text) : "",
-        prio: t.priorita || "střední",
-        done: false,
-      }))
-      .filter((t) => t.what)
-      .map((t) => ({ ...t, done: old.get(t.what.toLowerCase()) || false }))
-      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
-    rec.tasksAt = new Date().toISOString();
+    const text = await llm({ system: tasksSystem(rec), input: notesInput(rec), json: true });
+    setTasks(rec, parseJsonArray(text));
     await putRec(rec);
     toast(rec.tasks.length ? `Nalezeno úkolů: ${rec.tasks.length}` : "Ve schůzce nezazněly žádné úkoly.");
   } catch (err) {
@@ -827,13 +911,14 @@ async function ask(rec, question, label) {
   const verify = question === "verify";
   const v = activeVersion(rec);
   if (verify && !v) return toast("Není co ověřovat – zápis zatím není.");
+  const system = `Odpovídáš na otázky k jedné konkrétní schůzce. Vycházej jen z přepisu${verify ? " a zápisu" : ""}. Tvrzení podlož krátkou doslovnou citací z přepisu v uvozovkách. Pokud odpověď v přepisu není, řekni to rovnou. Odpovídej stručně, česky, prostým textem bez Markdownu; nadpisy VELKÝMI PÍSMENY, odrážky pomlčkou.${glossaryRule()}`;
+  const input = `${notesInput(rec)}${verify ? `\n\n<zapis>\n${v.text}\n</zapis>` : ""}\n\nOtázka: ${verify ? VERIFY_Q : question}`;
+  if (goManual()) return manualRun(rec, { kind: "ask", prompt: `${system}\n\n${input}`, label: label || question });
   ops.add(key);
   rec.qa = rec.qa || [];
   const item = { q: label || question, a: "", at: new Date().toISOString(), pending: true };
   rec.qa.unshift(item);
   refresh(rec);
-  const system = `Odpovídáš na otázky k jedné konkrétní schůzce. Vycházej jen z přepisu${verify ? " a zápisu" : ""}. Tvrzení podlož krátkou doslovnou citací z přepisu v uvozovkách. Pokud odpověď v přepisu není, řekni to rovnou. Odpovídej stručně, česky, prostým textem bez Markdownu; nadpisy VELKÝMI PÍSMENY, odrážky pomlčkou.${glossaryRule()}`;
-  const input = `${notesInput(rec)}${verify ? `\n\n<zapis>\n${v.text}\n</zapis>` : ""}\n\nOtázka: ${verify ? VERIFY_Q : question}`;
   let last = 0;
   try {
     item.a = await llm({
@@ -914,7 +999,7 @@ async function processRecording(rec, { redo = false, notesOnly = false } = {}) {
       }
     }
     if (!rec.transcript) throw new Error("V nahrávce nebyla rozpoznána žádná řeč.");
-    if (st.notesProvider === "claude-manual") {
+    if (manualApp(st)) {
       await update({ status: "manual", progress: "" });
       return;
     }
@@ -1316,7 +1401,6 @@ function closeDetail() {
 }
 
 const STATUS_TEXT = {
-  manual: "Přepis je hotový. Klepněte na 1. – přepis se zkopíruje a otevře se Claude. Tam ho vložte, a hotový zápis zkopírujte zpět tlačítkem 2.",
   interrupted: "Nahrávání se přerušilo (zamčení telefonu nebo hovor). Zvuk do té chvíle je uložený. Můžete pokračovat ve stejné nahrávce, nebo ji dokončit a zpracovat.",
 };
 
@@ -1326,7 +1410,7 @@ function renderDetail(rec) {
   const created = new Date(rec.created);
   $("#dMeta").textContent = [created.toLocaleString("cs-CZ"), rec.place, rec.duration ? clock(rec.duration) : ""].filter(Boolean).join(" · ");
   const status = $("#dStatus");
-  status.hidden = !["processing", "error", "manual", "interrupted"].includes(rec.status);
+  status.hidden = !["processing", "error", "interrupted"].includes(rec.status);
   status.classList.toggle("error", rec.status === "error");
   status.textContent = rec.status === "error" ? rec.error : STATUS_TEXT[rec.status] || rec.progress || "Zpracovávám…";
   const busy = processing.has(rec.id);
@@ -1334,8 +1418,7 @@ function renderDetail(rec) {
   $("#resumeBox").hidden = !canContinue;
   $("#btnFinish").hidden = rec.status !== "interrupted";
   $("#btnContinue").classList.toggle("secondary", rec.status !== "interrupted");
-  const manual = !!rec.transcript && (rec.status === "manual" || loadSettings().notesProvider === "claude-manual");
-  $("#manualBox").hidden = !manual;
+  renderManual(rec);
   renderNotes(rec);
   renderTasks(rec);
   renderQa(rec);
@@ -1383,7 +1466,8 @@ function renderTasks(rec) {
   const tasks = rec.tasks || [];
   const btn = $("#btnTasks");
   btn.disabled = busy || !rec.transcript;
-  btn.innerHTML = busy ? `<i class="spin"></i>Hledám úkoly…` : `<svg><use href="#i-sparkle"/></svg>${tasks.length ? "Najít znovu" : "Najít úkoly"}`;
+  const via = goManual() ? ` v ${manualApp().name}` : "";
+  btn.innerHTML = busy ? `<i class="spin"></i>Hledám úkoly…` : `<svg><use href="#i-sparkle"/></svg>${tasks.length ? "Najít znovu" : "Najít úkoly"}${via}`;
   $("#tasksActions").hidden = !tasks.length;
   $("#btnTasksIcs").disabled = !tasks.some((t) => t.due && !t.done);
   const done = tasks.filter((t) => t.done).length;
@@ -1457,27 +1541,32 @@ function downloadRec(rec) {
   });
 }
 
-function openInClaude(rec, opts = defaultOpts()) {
-  navigator.clipboard.writeText(`${styleSystem(opts)}\n\n${notesInput(rec)}`).then(
-    () => toast("Zkopírováno. V Claude dlouze podržte pole zprávy a dejte Vložit."),
-    () => toast("Kopírování se nepodařilo."),
-  );
-  window.open("https://claude.ai/new", "_blank");
+function renderManual(rec) {
+  const pend = rec.pendingManual;
+  const app = manualApp() || MANUAL_APPS["claude-manual"];
+  $("#manualBox").hidden = !rec.transcript || (!pend && rec.status !== "manual");
+  $("#btnManualCancel").hidden = !pend;
+  if (pend) {
+    $("#manualText").textContent = `Čeká se na odpověď z aplikace ${pend.app}: ${pend.label}. Zadání je ve schránce – vložte ho do nové konverzace, odpověď zkopírujte a klepněte na Vložit.`;
+    $("#btnClaudeLabel").textContent = `Znovu zkopírovat a otevřít ${pend.app}`;
+    $("#btnPasteLabel").textContent = "Vložit odpověď ze schránky";
+  } else {
+    $("#manualText").textContent = `Přepis je hotový. Klepněte na 1. – zadání se zkopíruje a otevře se ${app.name}. Tam ho vložte, hotový zápis zkopírujte a klepněte na 2.`;
+    $("#btnClaudeLabel").textContent = `1. Napsat zápis v aplikaci ${app.name}`;
+    $("#btnPasteLabel").textContent = "2. Vložit hotový zápis ze schránky";
+  }
 }
 
-async function pasteNotes(rec) {
-  let text = "";
-  try {
-    text = (await navigator.clipboard.readText()).trim();
-  } catch {
-    return toast("Schránku se nepodařilo přečíst.");
+function manualStart(rec) {
+  const pend = rec.pendingManual;
+  if (pend) {
+    copyText(pend.prompt, `Zadání zkopírováno. Vložte ho v aplikaci ${pend.app}.`);
+    const url = Object.values(MANUAL_APPS).find((a) => a.name === pend.app)?.url || MANUAL_APPS["claude-manual"].url;
+    window.open(url, "_blank");
+    return;
   }
-  if (!text || text.includes("<prepis>")) return toast("Ve schránce není hotový zápis. V Claude ho nejdřív zkopírujte.");
-  addVersion(rec, { style: "standard" }, text, "Z aplikace Claude");
-  Object.assign(rec, { status: "done", error: "" });
-  await putRec(rec);
-  refresh(rec);
-  toast("Zápis vložen jako nová verze.");
+  const opts = defaultOpts();
+  manualRun(rec, { kind: "version", prompt: `${styleSystem(opts)}\n\n${notesInput(rec)}`, label: versionLabel(opts), opts });
 }
 
 async function continueRecording(rec) {
@@ -1515,8 +1604,15 @@ function bind() {
       () => toast("Kopírování se nepodařilo."),
     );
   });
-  $("#btnClaude").addEventListener("click", () => currentRec && openInClaude(currentRec));
-  $("#btnPaste").addEventListener("click", () => currentRec && pasteNotes(currentRec));
+  $("#btnClaude").addEventListener("click", () => currentRec && manualStart(currentRec));
+  $("#btnPaste").addEventListener("click", () => currentRec && pasteManual(currentRec));
+  $("#btnManualCancel").addEventListener("click", async () => {
+    const rec = currentRec;
+    if (!rec) return;
+    delete rec.pendingManual;
+    await putRec(rec);
+    refresh(rec);
+  });
   $("#btnDownload").addEventListener("click", () => currentRec && downloadRec(currentRec));
   $("#btnRedo").addEventListener("click", () => {
     const r = currentRec;
@@ -1625,11 +1721,16 @@ function bind() {
     sform.elements.slang.value = o.lang;
     sform.elements.sanon.value = o.anon;
     sform.elements.sextra.value = "";
-    $("#styleManualNote").hidden = !!aiProvider();
+    const app = goManual() && manualApp();
+    $("#styleManualNote").hidden = !app;
+    if (app) $("#styleManualNote").textContent = `Zadání se zkopíruje a otevře se aplikace ${app.name}. Hotový text tam zkopírujte a tady klepněte na „Vložit odpověď ze schránky“.`;
     sdlg.showModal();
   }
-  sdlg.addEventListener("close", () => {
-    if (sdlg.returnValue !== "create" || !currentRec) return;
+  // Vytvoření běží přímo v klepnutí – v ručním režimu se kopíruje do schránky
+  // a otevírá aplikace, což Safari dovolí jen během klepnutí.
+  sform.querySelector('button[value="create"]').addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!currentRec) return sdlg.close();
     const opts = {
       style: sform.elements.style.value || "standard",
       length: sform.elements.slength.value,
@@ -1637,7 +1738,7 @@ function bind() {
       anon: sform.elements.sanon.value,
       extra: sform.elements.sextra.value,
     };
-    if (!aiProvider()) return openInClaude(currentRec, opts);
+    sdlg.close();
     generateVersion(currentRec, opts);
   });
 

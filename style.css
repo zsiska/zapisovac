@@ -566,6 +566,17 @@ dialog .actions { margin-bottom: 0; }
 dialog textarea { resize: vertical; line-height: 1.45; }
 dialog .btn svg { width: 18px; height: 18px; }
 
+.manual {
+  margin: 12px 0; padding: 14px; border-radius: var(--r-md);
+  background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.manual-text { margin: 0; font-size: 14px; line-height: 1.5; }
+.manual .actions { margin: 12px 0 0; }
+.linkbtn {
+  display: block; margin: 10px auto 0; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px;
+}
+
 /* ---------- oznámení ---------- */
 
 .toast {

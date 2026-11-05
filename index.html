@@ -15,7 +15,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <style>svg{width:20px;height:20px;flex:none}</style>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
@@ -122,9 +122,13 @@
         <button id="btnContinue" class="btn"><svg><use href="#i-mic"/></svg>Pokračovat v nahrávání</button>
         <button id="btnFinish" class="btn secondary"><svg><use href="#i-flag"/></svg>Dokončit a zpracovat</button>
       </div>
-      <div id="manualBox" class="actions" hidden>
-        <button id="btnClaude" class="btn"><svg><use href="#i-sparkle"/></svg>1. Napsat zápis v aplikaci Claude</button>
-        <button id="btnPaste" class="btn secondary"><svg><use href="#i-paste"/></svg>2. Vložit hotový zápis ze schránky</button>
+      <div id="manualBox" class="manual" hidden>
+        <p id="manualText" class="manual-text"></p>
+        <div class="actions">
+          <button id="btnClaude" class="btn"><svg><use href="#i-sparkle"/></svg><span id="btnClaudeLabel"></span></button>
+          <button id="btnPaste" class="btn secondary"><svg><use href="#i-paste"/></svg><span id="btnPasteLabel"></span></button>
+        </div>
+        <button id="btnManualCancel" class="linkbtn" hidden>Zrušit čekání</button>
       </div>
       <div class="actions main">
         <button id="btnEmail" class="btn"><svg><use href="#i-mail"/></svg>Poslat e-mailem</button>
@@ -219,7 +223,8 @@
         <label>Služba
           <select name="notesProvider">
             <option value="gemini">Google Gemini – zdarma, automaticky</option>
-            <option value="claude-manual">Aplikace Claude – zdarma, ručně</option>
+            <option value="claude-manual">Aplikace Claude – vaše předplatné, ručně</option>
+            <option value="chatgpt-manual">Aplikace ChatGPT – vaše předplatné, ručně</option>
             <option value="anthropic">Claude API – placené, automaticky</option>
           </select>
         </label>
@@ -322,7 +327,7 @@
           <input name="sextra" type="text" autocomplete="off" placeholder="Např. zdůrazni dopad na rozpočet">
         </label>
       </fieldset>
-      <p id="styleManualNote" class="note" hidden>Nemáte klíč Gemini ani Claude API – zadání se zkopíruje a otevře se aplikace Claude. Hotový text pak vložte tlačítkem „Vložit hotový zápis ze schránky“.</p>
+      <p id="styleManualNote" class="note" hidden></p>
       <div class="actions two">
         <button value="cancel" class="btn secondary">Zrušit</button>
         <button value="create" class="btn"><svg><use href="#i-sparkle"/></svg>Vytvořit verzi</button>
@@ -338,6 +343,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>
