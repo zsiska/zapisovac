@@ -352,29 +352,67 @@ function notesInput(rec) {
   return `${info}\n\n<prepis>\n${rec.transcript}\n</prepis>`;
 }
 
+const GEMINI_FALLBACK = "gemini-flash-latest";
+const RETRY_DELAYS = [3, 8, 15]; // sekundy mezi pokusy při přetížení
+
+const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
+
+function geminiRequest(st, model, rec) {
+  return fetch(`${GEMINI_URL}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+    method: "POST",
+    headers: { "x-goog-api-key": st.geminiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: NOTES_SYSTEM }] },
+      contents: [{ role: "user", parts: [{ text: notesInput(rec) }] }],
+      generationConfig: { maxOutputTokens: 32768 },
+    }),
+  });
+}
+
+// Přetížení (503) nebo dočasná chyba serveru: zkusit znovu s prodlevou,
+// nakonec jednou záložní model. Uživatel vidí průběh v detailu nahrávky.
+async function geminiWithRetry(st, model, rec) {
+  const say = (t) => {
+    rec.progress = t;
+    refresh(rec);
+  };
+  const busy = (code) => code >= 500 && code <= 504;
+  let res;
+  for (let i = 0; ; i++) {
+    try {
+      res = await geminiRequest(st, model, rec);
+    } catch {
+      throw new Error("Zápis selhal: nejste připojeni k internetu.");
+    }
+    if (!busy(res.status) || i >= RETRY_DELAYS.length) break;
+    say(`Gemini je přetížený, zkouším znovu za ${RETRY_DELAYS[i]} s (pokus ${i + 2}/${RETRY_DELAYS.length + 1})…`);
+    await sleep(RETRY_DELAYS[i]);
+    say("Píšu zápis ze schůzky…");
+  }
+  if (busy(res.status) && model !== GEMINI_FALLBACK) {
+    say("Gemini je přetížený, zkouším záložní model…");
+    try {
+      const alt = await geminiRequest(st, GEMINI_FALLBACK, rec);
+      if (alt.ok) {
+        say("Píšu zápis ze schůzky…");
+        return alt;
+      }
+    } catch {}
+  }
+  return res;
+}
+
 async function makeNotesGemini(rec, onText) {
   const st = loadSettings();
   if (!st.geminiKey) throw new Error("Chybí Gemini API klíč – doplňte ho v Nastavení.");
   const model = st.geminiModel || DEFAULTS.geminiModel;
-  let res;
-  try {
-    res = await fetch(`${GEMINI_URL}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
-      method: "POST",
-      headers: { "x-goog-api-key": st.geminiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: NOTES_SYSTEM }] },
-        contents: [{ role: "user", parts: [{ text: notesInput(rec) }] }],
-        generationConfig: { maxOutputTokens: 32768 },
-      }),
-    });
-  } catch {
-    throw new Error("Zápis selhal: nejste připojeni k internetu.");
-  }
+  const res = await geminiWithRetry(st, model, rec);
   if (!res.ok) {
     const body = await res.text();
     if (/API_KEY_INVALID|API key not valid/.test(body)) throw new Error("Zápis selhal: neplatný Gemini klíč.");
-    if (res.status === 429) throw new Error("Zápis selhal: vyčerpaný bezplatný limit Gemini, zkuste to později.");
+    if (res.status === 429) throw new Error("Zápis selhal: vyčerpaný bezplatný limit Gemini. Zkuste to později tlačítkem Zpracovat znovu.");
     if (res.status === 404) throw new Error(`Zápis selhal: model „${model}“ neexistuje – změňte ho v Nastavení.`);
+    if (res.status >= 500) throw new Error("Zápis se nepodařil: Gemini je teď přetížený. Přepis je uložený – za pár minut klepněte na Zpracovat znovu, nebo v Nastavení přepněte na Aplikaci Claude.");
     throw new Error(`Zápis selhal (${res.status}): ${body.slice(0, 200)}`);
   }
   // Odpověď chodí jako SSE: řádky „data: {json}“.
@@ -451,7 +489,7 @@ const processing = new Set();
 // rec.live = průběžný přepis z nahrávání. U Groq se rovnou použije (šetří
 // bezplatný limit); u ElevenLabs se celá nahrávka přepíše znovu s mluvčími
 // a průběžný přepis slouží jen jako záloha. redo = vždy přepsat celý zvuk.
-async function processRecording(rec, { redo = false } = {}) {
+async function processRecording(rec, { redo = false, notesOnly = false } = {}) {
   if (processing.has(rec.id)) return;
   processing.add(rec.id);
   const update = async (patch) => {
@@ -463,7 +501,9 @@ async function processRecording(rec, { redo = false } = {}) {
   try {
     const st = loadSettings();
     await update({ status: "processing", error: "" });
-    if (liveText && st.sttProvider !== "elevenlabs") {
+    if (notesOnly && rec.transcript) {
+      // Přepis už je hotový, selhal jen zápis – přepis neopakujeme.
+    } else if (liveText && st.sttProvider !== "elevenlabs") {
       await update({ transcript: liveText });
     } else {
       try {
@@ -985,7 +1025,12 @@ function bind() {
   $("#btnClaude").addEventListener("click", () => currentRec && openInClaude(currentRec));
   $("#btnPaste").addEventListener("click", () => currentRec && pasteNotes(currentRec));
   $("#btnDownload").addEventListener("click", () => currentRec && downloadRec(currentRec));
-  $("#btnRedo").addEventListener("click", () => currentRec && processRecording(currentRec, { redo: true }));
+  $("#btnRedo").addEventListener("click", () => {
+    const r = currentRec;
+    if (!r) return;
+    const notesOnly = r.status === "error" && !!r.transcript && !r.notes;
+    processRecording(r, notesOnly ? { notesOnly: true } : { redo: true });
+  });
   $("#btnDelete").addEventListener("click", async () => {
     const rec = currentRec;
     if (rec && confirm(`Smazat nahrávku „${rec.name}“ včetně zápisu?`)) {
