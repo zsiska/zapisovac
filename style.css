@@ -577,6 +577,61 @@ dialog .btn svg { width: 18px; height: 18px; }
   color: var(--muted); font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px;
 }
 
+/* ---------- test telefonu, režim schůzky ---------- */
+
+.meeting-banner {
+  display: flex; align-items: center; gap: 12px; margin: 4px 0 12px;
+  padding: 12px 12px 12px 14px; border-radius: var(--r-md);
+  background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.mb-ico { color: var(--warn); display: grid; place-items: center; }
+.mb-body { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13.5px; line-height: 1.4; }
+.mb-body b { font-size: 14px; }
+.meeting-banner .btn.ghost { width: auto; flex: none; background: var(--surface); }
+
+#testDlg .sheet { padding: 8px 20px calc(20px + env(safe-area-inset-bottom)); overflow-y: auto; max-height: 92vh; }
+.checks { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.check {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px; border-radius: var(--r-md); background: var(--bg); border: 1px solid var(--line);
+}
+.check-ico {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--faint);
+}
+.check-ico svg { width: 15px; height: 15px; }
+.check.ok .check-ico { background: var(--ok); color: #fff; }
+.check.warn .check-ico { background: var(--warn); color: #fff; }
+.check.fail .check-ico { background: var(--danger); color: #fff; }
+.check.run .check-ico { color: var(--accent); background: var(--accent-soft); }
+.check.fail { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+.check-body { display: grid; gap: 4px; min-width: 0; }
+.check-title { font-weight: 600; font-size: 14.5px; }
+.check-detail { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.check-fix {
+  white-space: pre-line; font-size: 13.5px; line-height: 1.5; margin-top: 4px;
+  padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface);
+}
+.check-fix b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
+
+.test-run { text-align: center; padding: 18px 12px; margin-bottom: 12px; border-radius: var(--r-lg); background: var(--surface-2); }
+.test-count { font: 300 56px/1 var(--font-num); font-variant-numeric: tabular-nums; }
+.test-run p { margin: 10px auto; max-width: 32ch; font-size: 14px; color: var(--muted); }
+.meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; max-width: 240px; margin: 0 auto; }
+.meter i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .12s; }
+
+.meeting-box {
+  margin-top: 18px; padding: 14px; border-radius: var(--r-md);
+  background: var(--bg); border: 1px solid var(--line); display: grid; gap: 4px;
+}
+.meeting-box h3 { margin: 0; font-size: 15.5px; }
+.meeting-box .note { margin: 2px 0 6px; }
+.switch { display: flex !important; align-items: flex-start; gap: 10px; color: var(--text) !important; font-weight: 450 !important; }
+.switch input { width: 20px !important; height: 20px; margin: 2px 0 0 !important; flex: none; accent-color: var(--accent); -webkit-appearance: checkbox !important; appearance: auto !important; padding: 0 !important; }
+.meeting-box .btn { margin-top: 4px; }
+fieldset > .btn { margin: 4px 0 10px; }
+fieldset > .btn.ghost { margin-top: 0; }
+
 /* ---------- oznámení ---------- */
 
 .toast {

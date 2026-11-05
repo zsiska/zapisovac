@@ -1277,7 +1277,9 @@ function setRecordingUI(on) {
   $("#recHint").hidden = !on;
   $("#btnDark").hidden = !on;
   $("#live").hidden = !on;
-  if (!on) {
+  if (on) armAutoDark();
+  else {
+    clearTimeout(idleTimer);
     $("#dark").hidden = true;
     $("#timer").textContent = "00:00";
     $("#recName").textContent = "Stiskněte pro nahrávání";
@@ -1614,12 +1616,309 @@ async function continueRecording(rec) {
   await startRecording(rec);
 }
 
+// ---------- test telefonu a režim schůzky ----------
+// Webová aplikace nemůže nastavení telefonu přečíst ani změnit. Test proto
+// ověří, co jde (mikrofon, držení displeje, instalace), a hlavně prakticky
+// vyzkouší, jestli telefon položený bez dotyku vydrží nahrávat.
+
+const MEETING_KEY = "zapisovac.meeting";
+const TEST_SECONDS = 75; // déle než automatický zámek 30 s i 1 min
+const LOCK_LABELS = { "30s": "30 sekund", "1m": "1 minutu", "2m": "2 minuty", "3m": "3 minuty", "4m": "4 minuty", "5m": "5 minut", never: "Nikdy" };
+
+function loadMeeting() {
+  const base = { on: false, autoDark: true, origLock: "30s" };
+  try {
+    return { ...base, ...JSON.parse(localStorage.getItem(MEETING_KEY) || "{}") };
+  } catch {
+    return base;
+  }
+}
+
+function saveMeeting(m) {
+  try {
+    localStorage.setItem(MEETING_KEY, JSON.stringify(m));
+  } catch {}
+  renderMeeting();
+}
+
+function platformInfo() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const m = ua.match(/OS (\d+)[._](\d+)/);
+  const iosVer = ios && m ? Number(m[1]) * 100 + Number(m[2]) : null; // 18.4 → 1804
+  const standalone = navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+  return { ios, iosVer, standalone };
+}
+
+const LOCK_PATH_IOS = "Nastavení → Zobrazení a jas → Automatický zámek";
+
+function fixText(id, ios) {
+  const T = {
+    standalone: ios
+      ? "V Safari klepněte dole na Sdílet (čtverec se šipkou) → Přidat na plochu. Zapisovač pak spouštějte z ikony na ploše."
+      : "V Chrome klepněte na ⋮ → Přidat na plochu (Instalovat aplikaci).",
+    mic: ios
+      ? "Nastavení → Aplikace → Safari → Mikrofon → Zeptat se nebo Povolit (ve starším iOS: Nastavení → Safari → Mikrofon). Pak Zapisovač zavřete a znovu otevřete."
+      : "Klepněte na ikonu vedle adresy stránky → Oprávnění → Mikrofon → Povolit.",
+    wakelock: ios
+      ? "Aktualizujte iOS: Nastavení → Obecné → Aktualizace softwaru. Bez toho se displej při nahrávání může sám zamknout."
+      : "Aktualizujte prohlížeč Chrome v obchodě Google Play.",
+    oldios: "Ve vaší verzi iOS nemusí aplikace spuštěná z plochy umět držet displej rozsvícený. Rozhodne praktická zkouška níže; když neprojde, aktualizujte iOS (Nastavení → Obecné → Aktualizace softwaru).",
+    lock: ios
+      ? `1) ${LOCK_PATH_IOS} → Nikdy.\n2) Vypněte Úsporný režim: Nastavení → Baterie → Úsporný režim (nebo ikona baterie v Ovládacím centru). Úsporný režim zamyká telefon po 30 s bez ohledu na nastavení.\n3) Zkuste test znovu. Po schůzce můžete vše vrátit – viz Režim schůzky níže.`
+      : "1) Nastavení → Displej → Časový limit obrazovky → nejdelší hodnota.\n2) Vypněte Úsporu energie.\n3) Zkuste test znovu.",
+    silent: "Mikrofon během testu nic nezachytil. Zkontrolujte, že ho nic nezakrývá (pouzdro, prst) a že telefon není ztlumený pro jiné aplikace (probíhající hovor).",
+    storage: "Telefon může při nedostatku místa smazat data webových aplikací. Mějte Zapisovač na ploše, používejte ho pravidelně a důležité zápisy si posílejte e-mailem.",
+  };
+  return T[id];
+}
+
+let testState = null; // { items: [...], stream, rec, ... }
+
+function testItem(id, title) {
+  return { id, title, state: "wait", detail: "", fix: "" };
+}
+
+function renderTest() {
+  const items = testState?.items || [];
+  const icon = { ok: "i-check", warn: "i-info", fail: "i-close" };
+  $("#testList").innerHTML = items.map((it) => `
+    <li class="check ${it.state}">
+      <span class="check-ico">${it.state === "run" ? `<i class="spin"></i>` : icon[it.state] ? `<svg><use href="#${icon[it.state]}"/></svg>` : ""}</span>
+      <span class="check-body">
+        <span class="check-title">${esc(it.title)}</span>
+        ${it.detail ? `<span class="check-detail">${esc(it.detail)}</span>` : ""}
+        ${it.fix ? `<span class="check-fix"><b>Jak to opravit</b>${esc(it.fix)}</span>` : ""}
+      </span>
+    </li>`).join("");
+}
+
+function setItem(id, state, detail = "", fix = "") {
+  const it = testState.items.find((x) => x.id === id);
+  Object.assign(it, { state, detail, fix });
+  renderTest();
+}
+
+function openPhoneTest() {
+  const { ios } = platformInfo();
+  testState = {
+    ios,
+    items: [
+      testItem("standalone", "Aplikace spuštěná z plochy"),
+      testItem("mic", "Přístup k mikrofonu"),
+      testItem("wake", "Držení rozsvíceného displeje"),
+      testItem("storage", "Trvalé uložení nahrávek"),
+      testItem("live", `Praktická zkouška: ${TEST_SECONDS} s nahrávání bez dotyku`),
+    ],
+  };
+  renderTest();
+  $("#testRun").hidden = true;
+  $("#btnTestStart").hidden = false;
+  $("#btnTestStart").disabled = !!session;
+  $("#btnTestStart").textContent = "Spustit test";
+  $("#testIntro").textContent = session
+    ? "Právě se nahrává. Test spusťte až po skončení nahrávání."
+    : "Test trvá asi minutu a půl. Ověří mikrofon a držení displeje a pak telefon položený bez dotyku zkusí nahrávat. Nastavení telefonu webová aplikace číst ani měnit nemůže – když něco nebude v pořádku, ukáže přesnou cestu, kde to přepnout.";
+  renderMeeting();
+  $("#testDlg").showModal();
+}
+
+async function runPhoneTest() {
+  if (session) return toast("Test spusťte až po skončení nahrávání.");
+  const t = testState;
+  const { iosVer, standalone } = platformInfo();
+  $("#btnTestStart").hidden = true;
+  t.items.forEach((it) => Object.assign(it, { state: "wait", detail: "", fix: "" }));
+
+  // 1. Instalace na ploše
+  if (standalone) setItem("standalone", "ok", "Zapisovač běží jako aplikace z plochy.");
+  else setItem("standalone", "warn", "Zapisovač je otevřený v prohlížeči. Z plochy se chová spolehlivěji a má celou obrazovku.", fixText("standalone", t.ios));
+
+  // 2. Mikrofon (musí být hned v klepnutí)
+  setItem("mic", "run");
+  try {
+    t.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    setItem("mic", "ok", "Mikrofon je povolený.");
+  } catch {
+    setItem("mic", "fail", "Mikrofon není povolený, nahrávat nepůjde.", fixText("mic", t.ios));
+    setItem("live", "fail", "Zkouška nejde spustit bez mikrofonu.");
+    return finishTest();
+  }
+
+  // 3. Držení displeje
+  setItem("wake", "run");
+  try {
+    t.wake = await navigator.wakeLock.request("screen");
+    const oldPwa = t.ios && standalone && iosVer && iosVer < 1804;
+    if (oldPwa) setItem("wake", "warn", "Systém držení povolil, ale ve vaší verzi iOS nemusí v aplikaci z plochy fungovat.", fixText("oldios"));
+    else setItem("wake", "ok", "Displej se během nahrávání sám nezhasne.");
+  } catch {
+    t.wake = null;
+    setItem("wake", "fail", "Telefon nedovolil držet displej rozsvícený. Zamkne se podle automatického zámku a nahrávání se přeruší.", fixText("wakelock", t.ios));
+  }
+
+  // 4. Trvalé úložiště
+  setItem("storage", "run");
+  try {
+    const ok = (await navigator.storage?.persisted?.()) || (await navigator.storage?.persist?.());
+    if (ok) setItem("storage", "ok", "Nahrávky nebudou při nedostatku místa smazány.");
+    else setItem("storage", "warn", "Telefon nepotvrdil trvalé uložení.", fixText("storage"));
+  } catch {
+    setItem("storage", "warn", "Telefon trvalé uložení nepodporuje.", fixText("storage"));
+  }
+
+  // 5. Praktická zkouška
+  await practicalTest(t);
+  finishTest();
+}
+
+function practicalTest(t) {
+  return new Promise((resolve) => {
+    setItem("live", "run", "Položte telefon displejem nahoru a nedotýkejte se ho.");
+    $("#testRun").hidden = false;
+    $("#testDlg .sheet").scrollTop = 0;
+    let left = TEST_SECONDS;
+    let hidden = false;
+    let bytes = 0;
+    let peak = 0;
+    $("#testCount").textContent = left;
+
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ac.createAnalyser();
+    an.fftSize = 1024;
+    ac.createMediaStreamSource(t.stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    const rec = new MediaRecorder(t.stream);
+    rec.ondataavailable = (e) => (bytes += e.data.size);
+    rec.start(1000);
+    const track = t.stream.getAudioTracks()[0];
+
+    const meter = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (const x of buf) sum += x * x;
+      const rms = Math.sqrt(sum / buf.length);
+      peak = Math.max(peak, rms);
+      $("#testMeter").style.width = `${Math.min(100, rms * 400)}%`;
+    }, 120);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") hidden = true;
+      else if (hidden) done();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const tick = setInterval(() => {
+      left -= 1;
+      $("#testCount").textContent = left;
+      if (left <= 0) done();
+    }, 1000);
+    t.abort = () => done(true);
+
+    let finished = false;
+    function done(aborted = false) {
+      if (finished) return;
+      finished = true;
+      clearInterval(tick);
+      clearInterval(meter);
+      document.removeEventListener("visibilitychange", onVis);
+      try {
+        rec.stop();
+      } catch {}
+      ac.close().catch(() => {});
+      $("#testRun").hidden = true;
+      setTimeout(() => {
+        if (aborted) setItem("live", "warn", "Zkouška byla přerušena.");
+        else if (hidden) setItem("live", "fail", "Telefon se během zkoušky zamkl nebo zhasl – stejně by se přerušilo nahrávání schůzky.", fixText("lock", t.ios));
+        else if (track.readyState === "ended" || !bytes) setItem("live", "fail", "Systém během zkoušky odebral mikrofon (např. kvůli hovoru nebo jiné aplikaci).", fixText("lock", t.ios));
+        else if (peak < 0.002) setItem("live", "warn", "Displej vydržel, ale mikrofon zachytil jen ticho.", fixText("silent"));
+        else setItem("live", "ok", `Displej zůstal rozsvícený a nahrávání běželo celých ${TEST_SECONDS} s. Na delší schůzky klepněte při nahrávání na Ztmavit obrazovku.`);
+        resolve();
+      }, 1200);
+    }
+  });
+}
+
+function finishTest() {
+  const t = testState;
+  t.stream?.getTracks().forEach((tr) => tr.stop());
+  t.wake?.release().catch(() => {});
+  t.stream = null;
+  t.wake = null;
+  $("#btnTestStart").hidden = false;
+  $("#btnTestStart").textContent = "Spustit znovu";
+  const bad = t.items.filter((x) => x.state === "fail").length;
+  $("#testIntro").textContent = bad
+    ? `Test našel ${bad === 1 ? "1 problém" : `${bad} problémy`}. Opravte ho podle návodu a spusťte test znovu.`
+    : "Telefon je připravený nahrávat s položeným displejem.";
+  renderMeeting();
+}
+
+// Režim schůzky: připomene vrátit automatický zámek a během nahrávání
+// sám ztmaví displej, když se telefonu nikdo nedotýká.
+function renderMeeting() {
+  const m = loadMeeting();
+  const lock = LOCK_LABELS[m.origLock] || "původní hodnotu";
+  $("#meetingBanner").hidden = !m.on;
+  $("#meetingText").textContent = `Po schůzce vraťte automatický zámek na ${lock}: ${LOCK_PATH_IOS}. Případně znovu zapněte Úsporný režim.`;
+  $("#meetingState").textContent = m.on
+    ? `Režim schůzky je zapnutý. Až skončíte, vraťte automatický zámek na ${lock}.`
+    : "Režim schůzky je vypnutý.";
+  $("#btnMeetingOff2").hidden = !m.on;
+  $("#mOrigLock").value = m.origLock;
+  $("#mAutoDark").checked = m.autoDark;
+  $("#btnMeetingOn").hidden = m.on;
+  $("#btnMeetingOffDlg").hidden = !m.on;
+}
+
+function meetingOn() {
+  saveMeeting({ ...loadMeeting(), on: true, origLock: $("#mOrigLock").value, autoDark: $("#mAutoDark").checked });
+  toast(`Režim schůzky zapnut. Teď nastavte ${LOCK_PATH_IOS} → Nikdy.`);
+}
+
+function meetingOff() {
+  const m = loadMeeting();
+  saveMeeting({ ...m, on: false });
+  toast(m.origLock && m.origLock !== "never" ? `Nezapomeňte: automatický zámek zpět na ${LOCK_LABELS[m.origLock]}.` : "Režim schůzky vypnut.");
+}
+
+// Automatické ztmavení při nahrávání (jen v režimu schůzky).
+let idleTimer = null;
+function armAutoDark() {
+  clearTimeout(idleTimer);
+  const m = loadMeeting();
+  if (!session || !m.on || !m.autoDark) return;
+  idleTimer = setTimeout(() => {
+    if (session) $("#dark").hidden = false;
+  }, 15000);
+}
+
+function bindPhoneTest() {
+  $("#btnPhoneTest").addEventListener("click", openPhoneTest);
+  $("#btnTestStart").addEventListener("click", runPhoneTest);
+  $("#btnTestAbort").addEventListener("click", () => testState?.abort?.());
+  $("#btnTestClose").addEventListener("click", () => {
+    testState?.abort?.();
+    $("#testDlg").close();
+  });
+  $("#btnMeetingOn").addEventListener("click", meetingOn);
+  $("#btnMeetingOffDlg").addEventListener("click", meetingOff);
+  $("#btnMeetingOff").addEventListener("click", meetingOff);
+  $("#btnMeetingOff2").addEventListener("click", meetingOff);
+  $("#mOrigLock").addEventListener("change", () => saveMeeting({ ...loadMeeting(), origLock: $("#mOrigLock").value }));
+  $("#mAutoDark").addEventListener("change", () => saveMeeting({ ...loadMeeting(), autoDark: $("#mAutoDark").checked }));
+  document.addEventListener("pointerdown", () => session && $("#dark").hidden && armAutoDark(), { passive: true });
+  renderMeeting();
+}
+
 // ---------- události ----------
 
 function bind() {
   $("#btnRecord").addEventListener("click", () => (session ? finishRecording(session, false) : startRecording()));
   $("#btnDark").addEventListener("click", () => ($("#dark").hidden = false));
-  $("#dark").addEventListener("click", () => ($("#dark").hidden = true));
+  $("#dark").addEventListener("click", () => {
+    $("#dark").hidden = true;
+    armAutoDark();
+  });
+  bindPhoneTest();
   $("#fileImport").addEventListener("change", (e) => {
     const f = e.target.files[0];
     e.target.value = "";

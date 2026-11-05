@@ -15,7 +15,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <style>svg{width:20px;height:20px;flex:none}</style>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
@@ -38,6 +38,8 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3.5 13.9 9a2 2 0 0 0 1.2 1.2l5.4 1.8-5.4 1.9a2 2 0 0 0-1.2 1.2L12 20.5l-1.9-5.4a2 2 0 0 0-1.2-1.2L3.5 12l5.4-1.8A2 2 0 0 0 10.1 9L12 3.5Z"/></symbol>
     <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M9 4.5V3.5h6v1M9 11h6M9 15h4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M7 7l10 10M17 7 7 17"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M10.5 18.5h3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4"/></symbol>
     <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
@@ -54,6 +56,11 @@
   </header>
 
   <main id="home">
+    <div id="meetingBanner" class="meeting-banner" hidden>
+      <span class="mb-ico"><svg><use href="#i-phone"/></svg></span>
+      <div class="mb-body"><b>Režim schůzky</b><span id="meetingText"></span></div>
+      <button id="btnMeetingOff" class="btn ghost">Vráceno</button>
+    </div>
     <section class="recorder card">
       <div class="rec-state" aria-hidden="true">
         <span class="state-ready">Připraveno</span>
@@ -278,6 +285,14 @@
       </fieldset>
 
       <fieldset>
+        <legend>Nahrávání se zhasnutým displejem</legend>
+        <p class="note">Ověří, jestli telefon položený bez dotyku vydrží nahrávat, a poradí, co v telefonu přenastavit.</p>
+        <button type="button" id="btnPhoneTest" class="btn secondary"><svg><use href="#i-phone"/></svg>Otestovat telefon</button>
+        <p id="meetingState" class="note"></p>
+        <button type="button" id="btnMeetingOff2" class="btn ghost" hidden>Vypnout režim schůzky</button>
+      </fieldset>
+
+      <fieldset>
         <legend>Doručení</legend>
         <label>E-mail pro zápisy
           <input name="email" type="email" placeholder="vas@email.cz">
@@ -335,6 +350,43 @@
     </form>
   </dialog>
 
+  <dialog id="testDlg">
+    <div class="sheet">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <h2>Test telefonu</h2>
+      <p id="testIntro" class="note"></p>
+      <div id="testRun" class="test-run" hidden>
+        <div id="testCount" class="test-count">75</div>
+        <p>Položte telefon displejem nahoru a nedotýkejte se ho. Klidně mluvte – měří se i mikrofon.</p>
+        <div class="meter"><i id="testMeter"></i></div>
+        <button id="btnTestAbort" class="linkbtn">Přerušit zkoušku</button>
+      </div>
+      <ul id="testList" class="checks"></ul>
+      <div class="actions two">
+        <button id="btnTestClose" class="btn secondary">Zavřít</button>
+        <button id="btnTestStart" class="btn">Spustit test</button>
+      </div>
+      <div class="meeting-box">
+        <h3>Režim schůzky – jen když ho potřebujete</h3>
+        <p class="note">Na schůzku přepnete v telefonu automatický zámek na Nikdy. Zapisovač si zapamatuje vaši běžnou hodnotu, bude vám na úvodní obrazovce připomínat, že ji máte vrátit, a během nahrávání sám ztmaví displej.</p>
+        <label>Váš běžný automatický zámek
+          <select id="mOrigLock">
+            <option value="30s">30 sekund</option>
+            <option value="1m">1 minuta</option>
+            <option value="2m">2 minuty</option>
+            <option value="3m">3 minuty</option>
+            <option value="4m">4 minuty</option>
+            <option value="5m">5 minut</option>
+            <option value="never">Nikdy</option>
+          </select>
+        </label>
+        <label class="switch"><input id="mAutoDark" type="checkbox"><span>Při nahrávání po 15 s bez dotyku ztmavit displej</span></label>
+        <button id="btnMeetingOn" class="btn"><svg><use href="#i-phone"/></svg>Zapnout režim schůzky</button>
+        <button id="btnMeetingOffDlg" class="btn secondary" hidden>Vypnout – nastavení jsem vrátil</button>
+      </div>
+    </div>
+  </dialog>
+
   <div id="dark" class="dark" hidden>
     <span class="dark-dot"></span>
     <div id="darkTimer" class="dark-timer">00:00</div>
@@ -343,6 +395,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=9"></script>
+  <script type="module" src="app.js?v=10"></script>
 </body>
 </html>
