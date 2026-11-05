@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Zapisovač</title>
   <meta name="description" content="Nahrávání schůzek s přepisem a automatickým zápisem">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Zapisovač">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" href="icons/icon-192.png">
@@ -16,129 +17,180 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <h1>Zapisovač</h1>
-    <button id="btnSettings" class="icon" aria-label="Nastavení">⚙︎</button>
+  <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 4.6H9a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.04a1.7 1.7 0 0 0 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51.96Z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9.5 17v-3M12 17v-5M14.5 17v-2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m4 7 8 6 8-6"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12M7.5 7.5 12 3l4.5 4.5M6 11H5a1 1 0 0 0-1 1v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a1 1 0 0 0-1-1h-1"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M15.5 5.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8.5a2 2 0 0 0 2 2h.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 3.5v5h-5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.8 12.2a2 2 0 0 0 2 1.8h5.4a2 2 0 0 0 2-1.8L17.5 7M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 11v5.5M12 7.6v.1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M8 5.5v13l10.5-6.5L8 5.5Z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3.5 13.9 9a2 2 0 0 0 1.2 1.2l5.4 1.8-5.4 1.9a2 2 0 0 0-1.2 1.2L12 20.5l-1.9-5.4a2 2 0 0 0-1.2-1.2L3.5 12l5.4-1.8A2 2 0 0 0 10.1 9L12 3.5Z"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M9 4.5V3.5h6v1M9 11h6M9 15h4"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M5 21V4.5M5 4.5h11l-2 4 2 4H5"/></symbol>
+  </svg>
+
+  <header class="top appbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <h1>Zapisovač</h1>
+    </div>
+    <button id="btnSettings" class="icon" aria-label="Nastavení"><svg><use href="#i-gear"/></svg></button>
   </header>
 
   <main id="home">
-    <section class="recorder">
+    <section class="recorder card">
+      <div class="rec-state" aria-hidden="true">
+        <span class="state-ready">Připraveno</span>
+        <span class="state-on"><i class="blink"></i>Nahrává se</span>
+      </div>
       <button id="btnRecord" class="record" aria-label="Spustit nahrávání"><span></span></button>
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div id="timer" class="timer">00:00</div>
       <div id="recName" class="rec-name">Stiskněte pro nahrávání</div>
       <p id="recHint" class="hint" hidden></p>
-      <button id="btnDark" class="btn secondary dark-btn" hidden>Ztmavit obrazovku</button>
+      <button id="btnDark" class="btn ghost dark-btn" hidden><svg><use href="#i-moon"/></svg>Ztmavit obrazovku</button>
       <div id="live" class="live" hidden></div>
     </section>
 
     <section class="import">
       <label class="btn secondary">
-        Importovat nahrávku (Diktafon, hovor)
+        <svg><use href="#i-upload"/></svg>
+        Importovat nahrávku
+        <span class="btn-sub">Diktafon, hovor, soubor</span>
         <input id="fileImport" type="file" accept="audio/*,.m4a,.mp3,.wav" hidden>
       </label>
     </section>
 
-    <details class="guide">
-      <summary>Nahrávání se zhasnutým telefonem</summary>
-      <p>Zapisovač nahrává jen se <b>zapnutým displejem</b>. Zamčením telefonu se nahrávání přeruší – zvuk se ale uloží a můžete klepnout na <b>Pokračovat</b>.</p>
-      <p><b>Aby se telefon sám nezamkl:</b></p>
-      <ul>
-        <li>Nastavení → Zobrazení a jas → Automatický zámek → <b>Nikdy</b></li>
-        <li>Vypněte <b>Úsporný režim</b> – ten zamyká telefon po 30 s.</li>
-        <li>Během nahrávání klepněte na <b>Ztmavit obrazovku</b> – displej zčerná a šetří baterii.</li>
-      </ul>
-      <p><b>Dlouhá schůzka s telefonem v kapse? Použijte Diktafon:</b></p>
-      <ol>
-        <li>Nahrajte schůzku v aplikaci <b>Diktafon</b> – ten nahrává i zamčený.</li>
-        <li>V Diktafonu klepněte na nahrávku → <b>⋯</b> → <b>Sdílet</b> → <b>Uložit do Souborů</b>.</li>
-        <li>Tady klepněte na <b>Importovat nahrávku</b> a vyberte ji.</li>
-      </ol>
-      <p><b>Nahrávka hovoru:</b> v aplikaci Poznámky otevřete nahrávku hovoru → <b>⋯</b> → <b>Uložit zvuk do Souborů</b>, pak Importovat.</p>
+    <details class="guide card">
+      <summary><svg><use href="#i-info"/></svg><span>Nahrávání se zhasnutým telefonem</span><svg class="chev"><use href="#i-chev"/></svg></summary>
+      <div class="guide-body">
+        <p>Zapisovač nahrává jen se <b>zapnutým displejem</b>. Zamčením telefonu se nahrávání přeruší – zvuk se ale uloží a můžete klepnout na <b>Pokračovat</b>.</p>
+        <p><b>Aby se telefon sám nezamkl:</b></p>
+        <ul>
+          <li>Nastavení → Zobrazení a jas → Automatický zámek → <b>Nikdy</b></li>
+          <li>Vypněte <b>Úsporný režim</b> – ten zamyká telefon po 30 s.</li>
+          <li>Během nahrávání klepněte na <b>Ztmavit obrazovku</b> – displej zčerná a šetří baterii.</li>
+        </ul>
+        <p><b>Dlouhá schůzka s telefonem v kapse? Použijte Diktafon:</b></p>
+        <ol>
+          <li>Nahrajte schůzku v aplikaci <b>Diktafon</b> – ten nahrává i zamčený.</li>
+          <li>V Diktafonu klepněte na nahrávku → <b>⋯</b> → <b>Sdílet</b> → <b>Uložit do Souborů</b>.</li>
+          <li>Tady klepněte na <b>Importovat nahrávku</b> a vyberte ji.</li>
+        </ol>
+        <p><b>Nahrávka hovoru:</b> v aplikaci Poznámky otevřete nahrávku hovoru → <b>⋯</b> → <b>Uložit zvuk do Souborů</b>, pak Importovat.</p>
+      </div>
     </details>
 
-    <section>
+    <section class="records">
       <h2>Nahrávky</h2>
       <ul id="list" class="list"></ul>
-      <p id="empty" class="muted">Zatím žádné nahrávky.</p>
+      <div id="empty" class="empty">
+        <span class="empty-icon"><svg><use href="#i-mic"/></svg></span>
+        <p><b>Zatím žádné nahrávky</b></p>
+        <p class="muted">Klepněte na červené tlačítko a začněte nahrávat schůzku.</p>
+      </div>
     </section>
   </main>
 
   <section id="detail" class="detail" hidden>
-    <header class="top">
-      <button id="btnBack" class="icon" aria-label="Zpět">‹</button>
+    <header class="top detail-bar">
+      <button id="btnBack" class="icon" aria-label="Zpět"><svg><use href="#i-back"/></svg></button>
       <h1 id="dTitle"></h1>
-      <span></span>
+      <span class="icon-spacer"></span>
     </header>
     <div class="detail-body">
-      <p id="dMeta" class="muted"></p>
-      <div id="dAudios"></div>
+      <p id="dMeta" class="meta"></p>
+      <div id="dAudios" class="player"></div>
       <p id="dStatus" class="status" hidden></p>
       <div id="resumeBox" class="actions" hidden>
-        <button id="btnContinue" class="btn">Pokračovat v nahrávání</button>
-        <button id="btnFinish" class="btn secondary">Dokončit a zpracovat</button>
+        <button id="btnContinue" class="btn"><svg><use href="#i-mic"/></svg>Pokračovat v nahrávání</button>
+        <button id="btnFinish" class="btn secondary"><svg><use href="#i-flag"/></svg>Dokončit a zpracovat</button>
       </div>
       <div id="manualBox" class="actions" hidden>
-        <button id="btnClaude" class="btn">1. Napsat zápis v aplikaci Claude</button>
-        <button id="btnPaste" class="btn secondary">2. Vložit hotový zápis ze schránky</button>
+        <button id="btnClaude" class="btn"><svg><use href="#i-sparkle"/></svg>1. Napsat zápis v aplikaci Claude</button>
+        <button id="btnPaste" class="btn secondary"><svg><use href="#i-paste"/></svg>2. Vložit hotový zápis ze schránky</button>
       </div>
-      <div class="actions">
-        <button id="btnEmail" class="btn">Poslat e-mailem</button>
-        <button id="btnShare" class="btn secondary">Sdílet (i se zvukem)</button>
-        <button id="btnCopy" class="btn secondary">Kopírovat zápis</button>
+      <div class="actions main">
+        <button id="btnEmail" class="btn"><svg><use href="#i-mail"/></svg>Poslat e-mailem</button>
+        <button id="btnShare" class="btn secondary"><svg><use href="#i-share"/></svg>Sdílet</button>
+        <button id="btnCopy" class="btn secondary"><svg><use href="#i-copy"/></svg>Kopírovat</button>
       </div>
-      <div class="tabs">
-        <button class="tab active" data-tab="notes">Zápis</button>
-        <button class="tab" data-tab="transcript">Přepis</button>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="notes" role="tab">Zápis</button>
+        <button class="tab" data-tab="transcript" role="tab">Přepis</button>
       </div>
       <pre id="dNotes" class="text"></pre>
-      <pre id="dTranscript" class="text" hidden></pre>
+      <pre id="dTranscript" class="text transcript" hidden></pre>
       <div class="actions small">
-        <button id="btnDownload" class="btn secondary">Stáhnout zvuk</button>
-        <button id="btnRedo" class="btn secondary">Zpracovat znovu</button>
-        <button id="btnDelete" class="btn danger">Smazat</button>
+        <button id="btnDownload" class="btn tool"><svg><use href="#i-download"/></svg>Stáhnout zvuk</button>
+        <button id="btnRedo" class="btn tool"><svg><use href="#i-redo"/></svg>Zpracovat znovu</button>
+        <button id="btnDelete" class="btn tool danger"><svg><use href="#i-trash"/></svg>Smazat</button>
       </div>
     </div>
   </section>
 
   <dialog id="settings">
     <form method="dialog" id="settingsForm">
+      <div class="sheet-grip" aria-hidden="true"></div>
       <h2>Nastavení</h2>
-      <label>Přepis řeči
-        <select name="sttProvider">
-          <option value="groq">Groq Whisper – zdarma</option>
-          <option value="elevenlabs">ElevenLabs – placené, nejpřesnější, rozliší mluvčí</option>
-        </select>
-      </label>
-      <label data-show="sttProvider=groq">Groq API klíč
-        <input name="groqKey" type="password" autocomplete="off" placeholder="gsk_…">
-      </label>
-      <label data-show="sttProvider=elevenlabs">ElevenLabs API klíč
-        <input name="elevenKey" type="password" autocomplete="off" placeholder="sk_…">
-      </label>
 
-      <label>Zápis ze schůzky
-        <select name="notesProvider">
-          <option value="gemini">Google Gemini – zdarma, automaticky</option>
-          <option value="claude-manual">Aplikace Claude – zdarma, ručně</option>
-          <option value="anthropic">Claude API – placené, automaticky</option>
-        </select>
-      </label>
-      <p data-show="notesProvider=gemini" class="muted">V bezplatné verzi může Google obsah přepisů použít ke zlepšování svých služeb.</p>
-      <label data-show="notesProvider=gemini">Gemini API klíč
-        <input name="geminiKey" type="password" autocomplete="off" placeholder="AIza…">
-      </label>
-      <label data-show="notesProvider=gemini">Model Gemini
-        <input name="geminiModel" type="text" autocomplete="off">
-      </label>
-      <label data-show="notesProvider=anthropic">Anthropic API klíč
-        <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
-      </label>
+      <fieldset>
+        <legend>Přepis řeči</legend>
+        <label>Služba
+          <select name="sttProvider">
+            <option value="groq">Groq Whisper – zdarma</option>
+            <option value="elevenlabs">ElevenLabs – placené, nejpřesnější, rozliší mluvčí</option>
+          </select>
+        </label>
+        <label data-show="sttProvider=groq">Groq API klíč
+          <input name="groqKey" type="password" autocomplete="off" placeholder="gsk_…">
+        </label>
+        <label data-show="sttProvider=elevenlabs">ElevenLabs API klíč
+          <input name="elevenKey" type="password" autocomplete="off" placeholder="sk_…">
+        </label>
+      </fieldset>
 
-      <label>E-mail pro zápisy
-        <input name="email" type="email" placeholder="vas@email.cz">
-      </label>
-      <p class="muted">Klíče se ukládají jen v tomto telefonu a posílají se pouze přímo zvoleným službám.</p>
-      <div class="actions">
+      <fieldset>
+        <legend>Zápis ze schůzky</legend>
+        <label>Služba
+          <select name="notesProvider">
+            <option value="gemini">Google Gemini – zdarma, automaticky</option>
+            <option value="claude-manual">Aplikace Claude – zdarma, ručně</option>
+            <option value="anthropic">Claude API – placené, automaticky</option>
+          </select>
+        </label>
+        <p data-show="notesProvider=gemini" class="note">V bezplatné verzi může Google obsah přepisů použít ke zlepšování svých služeb.</p>
+        <label data-show="notesProvider=gemini">Gemini API klíč
+          <input name="geminiKey" type="password" autocomplete="off" placeholder="AIza…">
+        </label>
+        <label data-show="notesProvider=gemini">Model Gemini
+          <input name="geminiModel" type="text" autocomplete="off">
+        </label>
+        <label data-show="notesProvider=anthropic">Anthropic API klíč
+          <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Doručení</legend>
+        <label>E-mail pro zápisy
+          <input name="email" type="email" placeholder="vas@email.cz">
+        </label>
+      </fieldset>
+
+      <p class="note">Klíče se ukládají jen v tomto telefonu a posílají se pouze přímo zvoleným službám.</p>
+      <div class="actions two">
         <button value="cancel" class="btn secondary">Zrušit</button>
         <button value="save" class="btn">Uložit</button>
       </div>
@@ -146,11 +198,12 @@
   </dialog>
 
   <div id="dark" class="dark" hidden>
+    <span class="dark-dot"></span>
     <div id="darkTimer" class="dark-timer">00:00</div>
     <p>Nahrávám · klepněte pro návrat</p>
   </div>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <script type="module" src="app.js"></script>
 </body>

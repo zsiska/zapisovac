@@ -803,11 +803,22 @@ const STATUS_LABEL = {
 async function renderList() {
   const recs = (await allRecs()).sort((a, b) => b.created.localeCompare(a.created));
   $("#empty").hidden = recs.length > 0;
-  $("#list").innerHTML = recs.map((r) => `
+  $("#list").innerHTML = recs.map((r) => {
+    const imported = r.source === "import";
+    const sub = [r.duration ? clock(r.duration) : "", imported ? "import" : ""].filter(Boolean).join(" · ");
+    const chip = STATUS_LABEL[r.status]
+      ? `<span class="chip s-${r.status}">${STATUS_LABEL[r.status]}</span>`
+      : r.notes ? `<span class="chip s-done"><svg><use href="#i-check"/></svg>zápis</span>` : "";
+    return `
     <li data-id="${r.id}">
-      <div class="name">${esc(r.name)}</div>
-      <div class="sub">${r.duration ? clock(r.duration) : ""}${r.source === "import" ? " · import" : ""}${STATUS_LABEL[r.status] ? " · " + STATUS_LABEL[r.status] : ""}</div>
-    </li>`).join("");
+      <span class="item-icon${imported ? " imp" : ""}"><svg><use href="#i-${imported ? "file" : "mic"}"/></svg></span>
+      <div class="item-body">
+        <div class="name">${esc(r.name)}</div>
+        ${sub || chip ? `<div class="sub">${sub ? `<span>${sub}</span>` : ""}${chip}</div>` : ""}
+      </div>
+      <svg class="chev"><use href="#i-chev"/></svg>
+    </li>`;
+  }).join("");
 }
 
 // Otevřená nahrávka je držená v paměti, aby tlačítka (sdílení, schránka)
