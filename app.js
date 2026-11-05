@@ -1915,12 +1915,12 @@ const LOOK_KEY = "zapisovac.look";
 // Barvy jen pro náhled v Nastavení; skutečné tokeny jsou ve style.css.
 const PALETTES = [
   { id: "kobalt", name: "Kobalt", l: ["#f3f5f8", "#2754e0"], d: ["#0b0f17", "#7090ff"] },
-  { id: "ocean", name: "Oceán", l: ["#f1f6f7", "#0b7285"], d: ["#091215", "#3cc7dd"] },
-  { id: "les", name: "Les", l: ["#f2f5f2", "#17754e"], d: ["#0b120e", "#4cc590"] },
-  { id: "levandule", name: "Levandule", l: ["#f5f4f9", "#5b3fd1"], d: ["#0d0c14", "#a593ff"] },
-  { id: "bordo", name: "Bordó", l: ["#f7f3f3", "#9b2343"], d: ["#130d0f", "#f0819f"] },
-  { id: "jantar", name: "Jantar", l: ["#f8f5f0", "#b5530f"], d: ["#120e0a", "#f59e4a"] },
-  { id: "grafit", name: "Grafit", l: ["#f4f4f5", "#18181b"], d: ["#0c0c0d", "#f4f4f5"] },
+  { id: "ocean", name: "Oceán", l: ["#d9eaef", "#0a6f84"], d: ["#0c2026", "#35cde6"] },
+  { id: "les", name: "Les", l: ["#dbe8de", "#146c47"], d: ["#0d2015", "#4fd193"] },
+  { id: "levandule", name: "Levandule", l: ["#e3dff3", "#5636d6"], d: ["#151030", "#ab9bff"] },
+  { id: "bordo", name: "Bordó", l: ["#eddde1", "#9a1f42"], d: ["#221016", "#ff86a8"] },
+  { id: "jantar", name: "Jantar", l: ["#efe2d1", "#b14d08"], d: ["#22170b", "#ffa552"] },
+  { id: "grafit", name: "Grafit", l: ["#dfdfe2", "#111113"], d: ["#000000", "#ffffff"] },
 ];
 
 function loadLook() {
