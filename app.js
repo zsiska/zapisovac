@@ -186,17 +186,47 @@ async function placeName(c) {
 
 // ---------- přepis ----------
 
-async function postForm(url, headers, fd, service) {
-  let res;
+// Přepis se při chybě sítě nebo useknutém odeslání zkusí znovu.
+const UPLOAD_RETRIES = [2, 6]; // sekundy čekání před 2. a 3. pokusem
+
+// Soubor z úložiště telefonu nejdřív celý načteme do paměti. Safari jinak
+// občas odešle zvuk uložený v IndexedDB useknutý („multipart: EOF“).
+async function inMemory(blob) {
   try {
-    res = await fetch(url, { method: "POST", headers, body: fd });
+    const bytes = await blob.arrayBuffer();
+    if (!bytes.byteLength) throw new Error("empty");
+    return new Blob([bytes], { type: blob.type || "audio/mp4" });
   } catch {
-    throw new Error("Přepis selhal: nejste připojeni k internetu.");
+    throw new Error("Zvuk se nepodařilo načíst z paměti telefonu. Zkuste aplikaci zavřít a otevřít, případně zvuk stáhnout a importovat znovu.");
   }
-  if (res.status === 401) throw new Error(`Přepis selhal: neplatný ${service} klíč.`);
-  if (res.status === 429) throw new Error(`Přepis selhal: vyčerpaný limit ${service}, zkuste to později.`);
-  if (!res.ok) throw new Error(`Přepis selhal (${res.status}): ${(await res.text()).slice(0, 200)}`);
-  return res.json();
+}
+
+async function postForm(url, headers, makeForm, service) {
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    let failed = "";
+    try {
+      res = await fetch(url, { method: "POST", headers, body: makeForm() });
+    } catch {
+      failed = "network";
+    }
+    if (res) {
+      if (res.status === 401) throw new Error(`Přepis selhal: neplatný ${service} klíč – opravte ho v Nastavení.`);
+      if (res.status === 429) throw new Error(`Přepis selhal: vyčerpaný limit ${service}, zkuste to později.`);
+      if (res.status === 413) throw new Error("Přepis selhal: nahrávka je pro službu příliš velká.");
+      if (res.ok) return res.json();
+      const text = await res.text();
+      // Useknuté odeslání (slabý signál) nebo dočasná chyba serveru – zkusit znovu.
+      if (/multipart|EOF|unexpected end/i.test(text) || res.status >= 500) failed = "upload";
+      else throw new Error(`Přepis selhal (${res.status}): ${text.slice(0, 200)}`);
+    }
+    if (attempt >= UPLOAD_RETRIES.length) {
+      throw new Error(failed === "network"
+        ? "Přepis selhal: nepodařilo se spojit se serverem. Zkontrolujte připojení a klepněte na Zpracovat znovu."
+        : "Přepis selhal: nahrávka se neodeslala celá (nejspíš slabý signál). Zkuste to na Wi-Fi tlačítkem Zpracovat znovu.");
+    }
+    await sleep(UPLOAD_RETRIES[attempt]);
+  }
 }
 
 // Whisper si v tichu občas „vymyslí“ titulky – takové úseky zahodíme.
@@ -205,13 +235,17 @@ const HALLUCINATION = /titulky|subtitles|www\.|děkuji za pozornost|ďakujem za 
 // Jazyk se nezadává, aby šla čeština i slovenština; nápověda ho jen naznačí.
 async function transcribeGroq(blob, st) {
   if (!st.groqKey) throw new Error("Chybí Groq API klíč – doplňte ho v Nastavení.");
-  const fd = new FormData();
-  fd.append("file", blob, "audio." + extFor(blob.type));
-  fd.append("model", GROQ_MODEL);
-  fd.append("response_format", "verbose_json");
-  fd.append("temperature", "0");
-  fd.append("prompt", "Pracovní schůzka v češtině, případně ve slovenčine.");
-  const data = await postForm(GROQ_URL, { Authorization: `Bearer ${st.groqKey}` }, fd, "Groq");
+  const audio = await inMemory(blob);
+  const makeForm = () => {
+    const fd = new FormData();
+    fd.append("file", audio, "audio." + extFor(audio.type));
+    fd.append("model", GROQ_MODEL);
+    fd.append("response_format", "verbose_json");
+    fd.append("temperature", "0");
+    fd.append("prompt", "Pracovní schůzka v češtině, případně ve slovenčine.");
+    return fd;
+  };
+  const data = await postForm(GROQ_URL, { Authorization: `Bearer ${st.groqKey}` }, makeForm, "Groq");
   if (!data.segments) return (data.text || "").trim();
   return data.segments
     .filter((s) => (s.no_speech_prob ?? 0) < 0.6 && !HALLUCINATION.test(s.text))
@@ -223,12 +257,16 @@ async function transcribeGroq(blob, st) {
 // diarize: rozliší mluvčí; používá se pro finální přepis celé nahrávky.
 async function transcribeEleven(blob, st, diarize) {
   if (!st.elevenKey) throw new Error("Chybí ElevenLabs API klíč – doplňte ho v Nastavení.");
-  const fd = new FormData();
-  fd.append("file", blob, "audio." + extFor(blob.type));
-  fd.append("model_id", ELEVEN_MODEL);
-  fd.append("tag_audio_events", "false");
-  if (diarize) fd.append("diarize", "true");
-  const data = await postForm(ELEVEN_URL, { "xi-api-key": st.elevenKey }, fd, "ElevenLabs");
+  const audio = await inMemory(blob);
+  const makeForm = () => {
+    const fd = new FormData();
+    fd.append("file", audio, "audio." + extFor(audio.type));
+    fd.append("model_id", ELEVEN_MODEL);
+    fd.append("tag_audio_events", "false");
+    if (diarize) fd.append("diarize", "true");
+    return fd;
+  };
+  const data = await postForm(ELEVEN_URL, { "xi-api-key": st.elevenKey }, makeForm, "ElevenLabs");
   return diarize ? withSpeakers(data) : (data.text || "").trim();
 }
 
