@@ -1909,6 +1909,81 @@ function bindPhoneTest() {
   renderMeeting();
 }
 
+// ---------- vzhled: palety a režim ----------
+
+const LOOK_KEY = "zapisovac.look";
+// Barvy jen pro náhled v Nastavení; skutečné tokeny jsou ve style.css.
+const PALETTES = [
+  { id: "kobalt", name: "Kobalt", l: ["#f3f5f8", "#2754e0"], d: ["#0b0f17", "#7090ff"] },
+  { id: "ocean", name: "Oceán", l: ["#f1f6f7", "#0b7285"], d: ["#091215", "#3cc7dd"] },
+  { id: "les", name: "Les", l: ["#f2f5f2", "#17754e"], d: ["#0b120e", "#4cc590"] },
+  { id: "levandule", name: "Levandule", l: ["#f5f4f9", "#5b3fd1"], d: ["#0d0c14", "#a593ff"] },
+  { id: "bordo", name: "Bordó", l: ["#f7f3f3", "#9b2343"], d: ["#130d0f", "#f0819f"] },
+  { id: "jantar", name: "Jantar", l: ["#f8f5f0", "#b5530f"], d: ["#120e0a", "#f59e4a"] },
+  { id: "grafit", name: "Grafit", l: ["#f4f4f5", "#18181b"], d: ["#0c0c0d", "#f4f4f5"] },
+];
+
+function loadLook() {
+  const base = { palette: "kobalt", mode: "auto" };
+  try {
+    return { ...base, ...JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") };
+  } catch {
+    return base;
+  }
+}
+
+function applyLook(look = loadLook()) {
+  const r = document.documentElement;
+  if (look.palette === "kobalt") delete r.dataset.palette;
+  else r.dataset.palette = look.palette;
+  if (look.mode === "auto") delete r.dataset.mode;
+  else r.dataset.mode = look.mode;
+  const bg = getComputedStyle(r).getPropertyValue("--bg").trim();
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    m.removeAttribute("media");
+    m.content = bg;
+  });
+}
+
+function renderLook() {
+  const look = loadLook();
+  document.querySelectorAll("#modeSeg button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.m === look.mode);
+    b.setAttribute("aria-checked", b.dataset.m === look.mode);
+  });
+  $("#paletteGrid").innerHTML = PALETTES.map((p) => `
+    <button type="button" class="pal${p.id === look.palette ? " active" : ""}" data-p="${p.id}" role="radio" aria-checked="${p.id === look.palette}">
+      <span class="pal-sw">
+        <span style="background:${p.l[0]}"><i style="background:${p.l[1]}"></i></span>
+        <span style="background:${p.d[0]}"><i style="background:${p.d[1]}"></i></span>
+      </span>
+      ${esc(p.name)}
+    </button>`).join("");
+}
+
+function setLook(patch) {
+  const look = { ...loadLook(), ...patch };
+  try {
+    localStorage.setItem(LOOK_KEY, JSON.stringify(look));
+  } catch {}
+  applyLook(look);
+  renderLook();
+}
+
+function bindLook() {
+  $("#modeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-m]");
+    if (b) setLook({ mode: b.dataset.m });
+  });
+  $("#paletteGrid").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-p]");
+    if (b) setLook({ palette: b.dataset.p });
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyLook());
+  applyLook();
+  renderLook();
+}
+
 // ---------- události ----------
 
 function bind() {
@@ -1919,6 +1994,7 @@ function bind() {
     armAutoDark();
   });
   bindPhoneTest();
+  bindLook();
   $("#fileImport").addEventListener("change", (e) => {
     const f = e.target.files[0];
     e.target.value = "";

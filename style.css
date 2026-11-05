@@ -34,7 +34,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-mode="light"]) {
     --bg: #0b0f17;
     --surface: #131a25;
     --surface-2: #1a2230;
@@ -58,6 +58,261 @@
     --shadow-lg: 0 24px 60px -12px rgba(0, 0, 0, .7);
     color-scheme: dark;
   }
+}
+:root[data-mode="dark"] {
+  --bg: #0b0f17;
+  --surface: #131a25;
+  --surface-2: #1a2230;
+  --text: #e8edf4;
+  --muted: #93a0b2;
+  --faint: #66738a;
+  --line: #232d3c;
+  --accent: #7090ff;
+  --accent-ink: #0b1020;
+  --accent-soft: rgba(112, 144, 255, .14);
+  --rec: #ff5a5f;
+  --rec-soft: rgba(255, 90, 95, .16);
+  --ok: #3cc48f;
+  --ok-soft: rgba(60, 196, 143, .14);
+  --warn: #e6a23c;
+  --warn-soft: rgba(230, 162, 60, .14);
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .13);
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, .02);
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, .02), 0 10px 30px -10px rgba(0, 0, 0, .6);
+  --shadow-lg: 0 24px 60px -12px rgba(0, 0, 0, .7);
+  color-scheme: dark;
+}
+
+
+/* ---------- barevné palety (výchozí Kobalt = tokeny výše) ---------- */
+:root[data-palette="ocean"] {
+  --bg: #f1f6f7;
+  --surface: #ffffff;
+  --surface-2: #e9f1f3;
+  --line: #dce7ea;
+  --text: #0e1a1d;
+  --muted: #586c72;
+  --faint: #8799a0;
+  --accent: #0b7285;
+  --accent-ink: #ffffff;
+  --accent-soft: #dff0f3;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="ocean"]:not([data-mode="light"]) {
+    --bg: #091215;
+    --surface: #101b1f;
+    --surface-2: #172429;
+    --line: #203238;
+    --text: #e4eff2;
+    --muted: #8fa7ae;
+    --faint: #61787f;
+    --accent: #3cc7dd;
+    --accent-ink: #04161a;
+    --accent-soft: rgba(60, 199, 221, .14);
+  }
+}
+:root[data-palette="ocean"][data-mode="dark"] {
+  --bg: #091215;
+  --surface: #101b1f;
+  --surface-2: #172429;
+  --line: #203238;
+  --text: #e4eff2;
+  --muted: #8fa7ae;
+  --faint: #61787f;
+  --accent: #3cc7dd;
+  --accent-ink: #04161a;
+  --accent-soft: rgba(60, 199, 221, .14);
+}
+:root[data-palette="les"] {
+  --bg: #f2f5f2;
+  --surface: #ffffff;
+  --surface-2: #ebf0eb;
+  --line: #dfe6df;
+  --text: #111a14;
+  --muted: #5b6b60;
+  --faint: #8a998e;
+  --accent: #17754e;
+  --accent-ink: #ffffff;
+  --accent-soft: #e1f1e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="les"]:not([data-mode="light"]) {
+    --bg: #0b120e;
+    --surface: #121b16;
+    --surface-2: #19241d;
+    --line: #22302a;
+    --text: #e6efe9;
+    --muted: #91a598;
+    --faint: #63776a;
+    --accent: #4cc590;
+    --accent-ink: #06140d;
+    --accent-soft: rgba(76, 197, 144, .14);
+  }
+}
+:root[data-palette="les"][data-mode="dark"] {
+  --bg: #0b120e;
+  --surface: #121b16;
+  --surface-2: #19241d;
+  --line: #22302a;
+  --text: #e6efe9;
+  --muted: #91a598;
+  --faint: #63776a;
+  --accent: #4cc590;
+  --accent-ink: #06140d;
+  --accent-soft: rgba(76, 197, 144, .14);
+}
+:root[data-palette="levandule"] {
+  --bg: #f5f4f9;
+  --surface: #ffffff;
+  --surface-2: #eeecf5;
+  --line: #e3e0ee;
+  --text: #15131f;
+  --muted: #625e74;
+  --faint: #918da3;
+  --accent: #5b3fd1;
+  --accent-ink: #ffffff;
+  --accent-soft: #ebe6fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="levandule"]:not([data-mode="light"]) {
+    --bg: #0d0c14;
+    --surface: #15131f;
+    --surface-2: #1d1a2a;
+    --line: #2a2639;
+    --text: #ebe9f3;
+    --muted: #a19cb5;
+    --faint: #6f6a83;
+    --accent: #a593ff;
+    --accent-ink: #110b26;
+    --accent-soft: rgba(165, 147, 255, .15);
+  }
+}
+:root[data-palette="levandule"][data-mode="dark"] {
+  --bg: #0d0c14;
+  --surface: #15131f;
+  --surface-2: #1d1a2a;
+  --line: #2a2639;
+  --text: #ebe9f3;
+  --muted: #a19cb5;
+  --faint: #6f6a83;
+  --accent: #a593ff;
+  --accent-ink: #110b26;
+  --accent-soft: rgba(165, 147, 255, .15);
+}
+:root[data-palette="bordo"] {
+  --bg: #f7f3f3;
+  --surface: #ffffff;
+  --surface-2: #f1ebec;
+  --line: #e9dfe1;
+  --text: #1d1315;
+  --muted: #6e5e62;
+  --faint: #9c8b8f;
+  --accent: #9b2343;
+  --accent-ink: #ffffff;
+  --accent-soft: #f6e3e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="bordo"]:not([data-mode="light"]) {
+    --bg: #130d0f;
+    --surface: #1c1417;
+    --surface-2: #251b1f;
+    --line: #33262b;
+    --text: #f1e8ea;
+    --muted: #ab979c;
+    --faint: #7a666b;
+    --accent: #f0819f;
+    --accent-ink: #1a0a0f;
+    --accent-soft: rgba(240, 129, 159, .14);
+  }
+}
+:root[data-palette="bordo"][data-mode="dark"] {
+  --bg: #130d0f;
+  --surface: #1c1417;
+  --surface-2: #251b1f;
+  --line: #33262b;
+  --text: #f1e8ea;
+  --muted: #ab979c;
+  --faint: #7a666b;
+  --accent: #f0819f;
+  --accent-ink: #1a0a0f;
+  --accent-soft: rgba(240, 129, 159, .14);
+}
+:root[data-palette="jantar"] {
+  --bg: #f8f5f0;
+  --surface: #ffffff;
+  --surface-2: #f2ede5;
+  --line: #e8e1d6;
+  --text: #1c160f;
+  --muted: #6f6556;
+  --faint: #9d9283;
+  --accent: #b5530f;
+  --accent-ink: #ffffff;
+  --accent-soft: #f8e9db;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="jantar"]:not([data-mode="light"]) {
+    --bg: #120e0a;
+    --surface: #1b1611;
+    --surface-2: #241e17;
+    --line: #322a20;
+    --text: #f2ece4;
+    --muted: #ab9f90;
+    --faint: #7a6f61;
+    --accent: #f59e4a;
+    --accent-ink: #1a0e03;
+    --accent-soft: rgba(245, 158, 74, .14);
+  }
+}
+:root[data-palette="jantar"][data-mode="dark"] {
+  --bg: #120e0a;
+  --surface: #1b1611;
+  --surface-2: #241e17;
+  --line: #322a20;
+  --text: #f2ece4;
+  --muted: #ab9f90;
+  --faint: #7a6f61;
+  --accent: #f59e4a;
+  --accent-ink: #1a0e03;
+  --accent-soft: rgba(245, 158, 74, .14);
+}
+:root[data-palette="grafit"] {
+  --bg: #f4f4f5;
+  --surface: #ffffff;
+  --surface-2: #ececee;
+  --line: #e3e3e6;
+  --text: #111113;
+  --muted: #616168;
+  --faint: #93939a;
+  --accent: #18181b;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8e8ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="grafit"]:not([data-mode="light"]) {
+    --bg: #0c0c0d;
+    --surface: #161618;
+    --surface-2: #1e1e21;
+    --line: #2a2a2e;
+    --text: #ededef;
+    --muted: #9d9da4;
+    --faint: #6a6a71;
+    --accent: #f4f4f5;
+    --accent-ink: #111113;
+    --accent-soft: rgba(244, 244, 245, .12);
+  }
+}
+:root[data-palette="grafit"][data-mode="dark"] {
+  --bg: #0c0c0d;
+  --surface: #161618;
+  --surface-2: #1e1e21;
+  --line: #2a2a2e;
+  --text: #ededef;
+  --muted: #9d9da4;
+  --faint: #6a6a71;
+  --accent: #f4f4f5;
+  --accent-ink: #111113;
+  --accent-soft: rgba(244, 244, 245, .12);
 }
 
 /* ---------- základ ---------- */
@@ -576,6 +831,25 @@ dialog .btn svg { width: 18px; height: 18px; }
   display: block; margin: 10px auto 0; border: 0; background: none; cursor: pointer;
   color: var(--muted); font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px;
 }
+
+/* ---------- vzhled v nastavení ---------- */
+
+.seg { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); margin: 8px 0 12px; }
+.seg button {
+  flex: 1; border: 0; background: none; color: var(--muted); cursor: pointer;
+  padding: 8px 4px; border-radius: 9px; font-size: 13.5px; font-weight: 600;
+}
+.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), 0 1px 3px rgba(15, 23, 36, .08); }
+.palettes { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.pal {
+  display: grid; gap: 6px; justify-items: center; padding: 10px 6px 8px; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--text);
+  font-size: 12.5px; font-weight: 600;
+}
+.pal.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pal-sw { display: flex; width: 52px; height: 30px; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); }
+.pal-sw span { flex: 1; display: grid; place-items: center; }
+.pal-sw i { width: 12px; height: 12px; border-radius: 50%; display: block; }
 
 /* ---------- test telefonu, režim schůzky ---------- */
 

@@ -15,7 +15,15 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <style>svg{width:20px;height:20px;flex:none}</style>
-  <link rel="stylesheet" href="style.css?v=11">
+  <script>
+    // Paleta a režim se nastaví ještě před vykreslením, aby stránka neproblikla.
+    try {
+      var look = JSON.parse(localStorage.getItem("zapisovac.look") || "{}");
+      if (look.palette && look.palette !== "kobalt") document.documentElement.dataset.palette = look.palette;
+      if (look.mode === "light" || look.mode === "dark") document.documentElement.dataset.mode = look.mode;
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
   <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
@@ -189,6 +197,17 @@
     <form method="dialog" id="settingsForm">
       <div class="sheet-grip" aria-hidden="true"></div>
       <h2>Nastavení</h2>
+
+      <fieldset>
+        <legend>Vzhled</legend>
+        <div id="modeSeg" class="seg" role="radiogroup" aria-label="Světlý nebo tmavý režim">
+          <button type="button" data-m="auto">Automaticky</button>
+          <button type="button" data-m="light">Světlý</button>
+          <button type="button" data-m="dark">Tmavý</button>
+        </div>
+        <div id="paletteGrid" class="palettes" role="radiogroup" aria-label="Barevná paleta"></div>
+        <p class="note">Automaticky = světlý nebo tmavý podle telefonu. Mění se hned, není potřeba ukládat.</p>
+      </fieldset>
 
       <fieldset>
         <legend>Přepis řeči</legend>
@@ -395,6 +414,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=12"></script>
 </body>
 </html>
