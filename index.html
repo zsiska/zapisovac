@@ -15,7 +15,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <style>svg{width:20px;height:20px;flex:none}</style>
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
@@ -38,6 +38,10 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3.5 13.9 9a2 2 0 0 0 1.2 1.2l5.4 1.8-5.4 1.9a2 2 0 0 0-1.2 1.2L12 20.5l-1.9-5.4a2 2 0 0 0-1.2-1.2L3.5 12l5.4-1.8A2 2 0 0 0 10.1 9L12 3.5Z"/></symbol>
     <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M9 4.5V3.5h6v1M9 11h6M9 15h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M5 21V4.5M5 4.5h11l-2 4 2 4H5"/></symbol>
   </svg>
 
@@ -129,9 +133,57 @@
       </div>
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="notes" role="tab">Zápis</button>
+        <button class="tab" data-tab="tasks" role="tab">Úkoly</button>
+        <button class="tab" data-tab="ask" role="tab">Zeptat se</button>
         <button class="tab" data-tab="transcript" role="tab">Přepis</button>
       </div>
-      <pre id="dNotes" class="text"></pre>
+
+      <div id="pNotes" class="panel">
+        <div id="dVersions" class="versions" aria-label="Verze výstupu"></div>
+        <div id="notesTools" class="notes-tools">
+          <button id="btnEditText" class="tchip"><svg><use href="#i-pencil"/></svg>Upravit</button>
+          <button id="btnAiEdit" class="tchip accent"><svg><use href="#i-sparkle"/></svg>AI úprava</button>
+          <button id="btnSaveFile" class="tchip"><svg><use href="#i-download"/></svg>Uložit</button>
+          <button id="btnDelVersion" class="tchip danger" aria-label="Smazat verzi"><svg><use href="#i-trash"/></svg></button>
+        </div>
+        <div id="aiEditBox" class="ai-box" hidden>
+          <p class="ai-box-title">Co s textem udělat? Vznikne nová verze, původní zůstane.</p>
+          <div id="aiEditQuick" class="quick"></div>
+          <div class="ask-row">
+            <input id="aiEditInput" type="text" autocomplete="off" placeholder="Např. přidej ke každému úkolu termín…">
+            <button id="aiEditGo" class="send" aria-label="Upravit"><svg><use href="#i-send"/></svg></button>
+          </div>
+        </div>
+        <pre id="dNotes" class="text"></pre>
+        <textarea id="dNotesEdit" class="text edit" hidden></textarea>
+        <div id="editBar" class="actions two" hidden>
+          <button id="btnEditCancel" class="btn secondary">Zrušit</button>
+          <button id="btnEditSave" class="btn">Uložit úpravy</button>
+        </div>
+      </div>
+
+      <div id="pTasks" class="panel" hidden>
+        <div class="panel-head">
+          <span id="tasksSummary" class="muted"></span>
+          <button id="btnTasks" class="btn ghost"></button>
+        </div>
+        <ul id="dTasks" class="tasks"></ul>
+        <div id="tasksActions" class="actions three" hidden>
+          <button id="btnTasksIcs" class="btn tool"><svg><use href="#i-calendar"/></svg>Do kalendáře</button>
+          <button id="btnTasksMail" class="btn tool"><svg><use href="#i-mail"/></svg>E-mailem</button>
+          <button id="btnTasksCopy" class="btn tool"><svg><use href="#i-copy"/></svg>Kopírovat</button>
+        </div>
+      </div>
+
+      <div id="pAsk" class="panel" hidden>
+        <div id="askQuick" class="quick"></div>
+        <div class="ask-row">
+          <input id="askInput" type="text" autocomplete="off" placeholder="Zeptejte se na cokoli ze schůzky…">
+          <button id="askGo" class="send" aria-label="Zeptat se"><svg><use href="#i-send"/></svg></button>
+        </div>
+        <div id="dQa" class="qa"></div>
+      </div>
+
       <pre id="dTranscript" class="text transcript" hidden></pre>
       <div class="actions small">
         <button id="btnDownload" class="btn tool"><svg><use href="#i-download"/></svg>Stáhnout zvuk</button>
@@ -184,6 +236,43 @@
       </fieldset>
 
       <fieldset>
+        <legend>Výstup</legend>
+        <label>Výchozí styl zápisu
+          <select name="defaultStyle" id="sDefaultStyle"></select>
+        </label>
+        <div class="row3">
+          <label>Délka
+            <select name="outLength">
+              <option value="short">Stručně</option>
+              <option value="normal">Běžně</option>
+              <option value="long">Podrobně</option>
+            </select>
+          </label>
+          <label>Jazyk
+            <select name="outLang">
+              <option value="cs">Čeština</option>
+              <option value="sk">Slovenčina</option>
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </label>
+          <label>Anonymizace
+            <select name="outAnon">
+              <option value="no">Ne</option>
+              <option value="yes">Ano</option>
+            </select>
+          </label>
+        </div>
+        <label>Slovník termínů a jmen
+          <textarea name="glossary" rows="3" placeholder="ISAS, ISSPOL, CEPR, Krajský soud v Plzni, Ing. Novák…"></textarea>
+        </label>
+        <p class="note">AI podle něj opraví zkomolené názvy z přepisu ve všech výstupech.</p>
+        <label>Vlastní styl
+          <textarea name="customStyle" rows="3" placeholder="Např. Zápis pro poradu vedení: nahoře semafor stavu projektu (zelená/oranžová/červená), pak rozpočet, termíny, rizika."></textarea>
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend>Doručení</legend>
         <label>E-mail pro zápisy
           <input name="email" type="email" placeholder="vas@email.cz">
@@ -198,6 +287,49 @@
     </form>
   </dialog>
 
+  <dialog id="styleDlg">
+    <form method="dialog" id="styleForm">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <h2>Nový styl výstupu</h2>
+      <p class="note">Z přepisu vznikne nová verze zápisu. Předchozí verze zůstanou a můžete mezi nimi přepínat.</p>
+      <div id="styleGrid" class="styles"></div>
+      <fieldset>
+        <legend>Úpravy</legend>
+        <div class="row3">
+          <label>Délka
+            <select name="slength">
+              <option value="short">Stručně</option>
+              <option value="normal">Běžně</option>
+              <option value="long">Podrobně</option>
+            </select>
+          </label>
+          <label>Jazyk
+            <select name="slang">
+              <option value="cs">Čeština</option>
+              <option value="sk">Slovenčina</option>
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </label>
+          <label>Anonymizace
+            <select name="sanon">
+              <option value="no">Ne</option>
+              <option value="yes">Ano</option>
+            </select>
+          </label>
+        </div>
+        <label>Doplňující pokyn (nepovinné)
+          <input name="sextra" type="text" autocomplete="off" placeholder="Např. zdůrazni dopad na rozpočet">
+        </label>
+      </fieldset>
+      <p id="styleManualNote" class="note" hidden>Nemáte klíč Gemini ani Claude API – zadání se zkopíruje a otevře se aplikace Claude. Hotový text pak vložte tlačítkem „Vložit hotový zápis ze schránky“.</p>
+      <div class="actions two">
+        <button value="cancel" class="btn secondary">Zrušit</button>
+        <button value="create" class="btn"><svg><use href="#i-sparkle"/></svg>Vytvořit verzi</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="dark" class="dark" hidden>
     <span class="dark-dot"></span>
     <div id="darkTimer" class="dark-timer">00:00</div>
@@ -206,6 +338,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
 </body>
 </html>

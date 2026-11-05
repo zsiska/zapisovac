@@ -1,6 +1,6 @@
 // Offline: vlastní soubory aplikace se berou ze sítě a při výpadku z cache,
 // knihovna z CDN se bere z cache. Volání API (přepis, zápis) se necachují.
-const CACHE = "zapisovac-v6";
+const CACHE = "zapisovac-v7";
 const SHELL = [
   "./",
   "./index.html",

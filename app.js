@@ -26,6 +26,12 @@ const DEFAULTS = {
   geminiModel: "gemini-3.6-flash",
   anthropicKey: "",
   email: "zsiska@seznam.cz",
+  defaultStyle: "standard",
+  outLength: "normal",
+  outLang: "cs",
+  outAnon: "no",
+  glossary: "",
+  customStyle: "",
 };
 
 function loadSettings() {
@@ -323,13 +329,13 @@ function encodeWav(samples, rate) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-// ---------- zápis ze schůzky ----------
+// ---------- styly výstupu ----------
 
-const NOTES_SYSTEM = `Jsi pečlivý zapisovatel porad. Dostaneš automatický přepis řeči ze schůzky nebo telefonního hovoru, v češtině nebo slovenštině (i střídavě). Přepis může obsahovat chyby rozpoznávání; mluvčí mohou být označeni „Mluvčí 1“, „Mluvčí 2“ atd. – pokud z obsahu vyplyne jejich jméno nebo role, použij ho. Zápis piš vždy česky.
-
-Vytvoř z něj podrobný zápis v češtině. Výstup bude vložen přímo do e-mailu, proto piš prostý text bez Markdownu (žádné #, ** ani tabulky); nadpisy piš VELKÝMI PÍSMENY, odrážky pomlčkou.
-
-Struktura:
+const STYLES = {
+  standard: {
+    label: "Podrobný zápis",
+    desc: "Kompletní zápis: témata, rozhodnutí, úkoly, čísla.",
+    prompt: `Vytvoř podrobný zápis. Struktura:
 ZÁPIS ZE SCHŮZKY
 Datum a čas, místo, délka (z údajů níže)
 
@@ -341,7 +347,120 @@ ROZHODNUTÍ
 TERMÍNY, ČÍSLA A ČÁSTKY – vše konkrétní, co zaznělo
 OTEVŘENÉ OTÁZKY
 
-Sekce, ke kterým přepis nic neobsahuje, vynech. Pokud jde o krátkou poznámku nebo hovor, přizpůsob rozsah. Nevymýšlej nic, co v přepisu není; nejasná místa označ [nejasné].`;
+Pokud jde o krátkou poznámku nebo hovor, přizpůsob rozsah.`,
+  },
+  formal: {
+    label: "Formální protokol",
+    desc: "Úřední jazyk, číslované body, usnesení. Pro instituce a soudy.",
+    prompt: `Vytvoř formální protokol z jednání v úředním stylu: věcně, ve třetí osobě, bez hodnocení a citově zabarvených výrazů, s číslovanými body.
+Struktura:
+PROTOKOL Z JEDNÁNÍ
+Datum, čas, místo a délka jednání
+PŘÍTOMNI
+PROGRAM JEDNÁNÍ – číslovaně
+PRŮBĚH JEDNÁNÍ – ke každému bodu programu: co bylo projednáno a stanoviska účastníků
+USNESENÍ A ZÁVĚRY – číslovaně, formulace typu „Bylo dohodnuto, že…“, „Účastníci se shodli, že…“
+ULOŽENÉ ÚKOLY – odpovědná osoba, úkol, termín
+Na konec: „Zapsáno automaticky aplikací Zapisovač. Ověřil: ____________“`,
+  },
+  exec: {
+    label: "Manažerské shrnutí",
+    desc: "Na jednu obrazovku: výsledek, rozhodnutí, rizika, další kroky.",
+    prompt: `Vytvoř manažerské shrnutí, které se dá přečíst za 30 sekund. Nejvýše 12 řádků.
+Struktura:
+VÝSLEDEK – jedna věta
+KLÍČOVÁ ROZHODNUTÍ – nejvýše 3 odrážky
+RIZIKA A BLOKERY – nejvýše 3 odrážky
+DALŠÍ KROKY – kdo, co, do kdy
+Vynech vše, co nemá dopad na rozhodování.`,
+  },
+  tech: {
+    label: "Technický zápis",
+    desc: "Požadavky s ID, technická rozhodnutí, závislosti, otevřené otázky.",
+    prompt: `Vytvoř technický zápis pro vývojáře a analytiky. Názvy systémů, modulů, rozhraní a odborné termíny zachovej přesně.
+Struktura:
+TECHNICKÝ ZÁPIS – téma
+KONTEXT – 2 až 3 věty: jaký problém se řeší
+POŽADAVKY – číslovaně R1, R2…; u každého popis, priorita (vysoká / střední / nízká) a kdo ho vznesl
+TECHNICKÁ ROZHODNUTÍ – co se zvolilo a proč; zamítnuté varianty
+ZÁVISLOSTI A INTEGRACE – systémy, rozhraní, data
+RIZIKA
+OTEVŘENÉ TECHNICKÉ OTÁZKY – číslovaně Q1, Q2…; u každé, kdo ji má zodpovědět
+ÚKOLY – kdo, co, do kdy`,
+  },
+  tasks: {
+    label: "Jen úkoly",
+    desc: "Kdo, co, do kdy a s jakou prioritou. Nic navíc.",
+    prompt: `Vypiš pouze úkoly, které ze schůzky vyplývají – výslovně zadané i jasně vyplývající ze slibů („pošlu“, „připravím“, „ozvu se“). Každý úkol na jeden řádek:
+- [Kdo] Co přesně udělat – termín – priorita
+Seřaď podle termínu. Na konci zvlášť uveď ÚKOLY BEZ ODPOVĚDNÉ OSOBY a ÚKOLY BEZ TERMÍNU, pokud nějaké jsou.`,
+  },
+  email: {
+    label: "E-mail účastníkům",
+    desc: "Hotový e-mail k odeslání: shrnutí, dohody, úkoly.",
+    prompt: `Napiš hotový e-mail, který se po schůzce pošle všem účastníkům. První řádek: „Předmět: …“. Pak oslovení, jedna věta poděkování za účast, krátké shrnutí, odrážky s dohodami, úkoly (kdo – co – do kdy) a prosba o doplnění, pokud to někdo vidí jinak. Zakonči „S pozdravem“ a prázdným řádkem pro podpis. Tón profesionální a přátelský.`,
+  },
+  client: {
+    label: "Pro klienta",
+    desc: "Diplomaticky, bez interních poznámek. Co jsme dohodli a co dodáme.",
+    prompt: `Vytvoř zápis určený klientovi. Vynech interní poznámky, spekulace, interní ceny a kritiku třetích stran. Formuluj diplomaticky a vstřícně, ale z dohod nic nezamlčuj.
+Struktura:
+SHRNUTÍ JEDNÁNÍ
+CO JSME SPOLEČNĚ DOHODLI
+CO DODÁME MY – co a do kdy
+CO POTŘEBUJEME OD VÁS – co a do kdy
+DALŠÍ KROK`,
+  },
+  friendly: {
+    label: "S nadhledem",
+    desc: "Lehký, vtipný tón pro tým. Fakta zůstávají přesná.",
+    prompt: `Napiš zápis s nadhledem a lehkým humorem pro interní tým – jako když kolega s dobrým smyslem pro humor shrnuje poradu do týmového chatu. Krátké odstavce, vtipné mezititulky, střídmě emoji (nejvýše 5). Fakta, rozhodnutí, úkoly a termíny musí být přesné a úplné. Nezesměšňuj konkrétní lidi.`,
+  },
+  custom: {
+    label: "Vlastní styl",
+    desc: "Podle vašeho popisu v Nastavení.",
+    prompt: "",
+  },
+};
+
+const LENGTHS = {
+  short: "Piš co nejstručněji – jen to podstatné.",
+  normal: "",
+  long: "Piš podrobně, zachyť i vedlejší body a argumenty jednotlivých stran.",
+};
+const LANGS = { cs: "česky", sk: "slovensky", en: "anglicky (in English)", de: "německy (auf Deutsch)" };
+
+const INTRO = "Jsi pečlivý zapisovatel porad. Dostaneš automatický přepis řeči ze schůzky nebo telefonního hovoru, v češtině nebo slovenštině (i střídavě). Přepis může obsahovat chyby rozpoznávání; mluvčí mohou být označeni „Mluvčí 1“, „Mluvčí 2“ atd. – pokud z obsahu vyplyne jejich jméno nebo role, použij ho.";
+
+function glossaryRule() {
+  const g = (loadSettings().glossary || "").trim();
+  return g ? `\nOdborné termíny, názvy a jména piš přesně podle tohoto slovníku – v přepisu mohou být zkomolené:\n${g}` : "";
+}
+
+function outputRules(opts) {
+  const rules = [
+    `Výstup piš ${LANGS[opts.lang] || "česky"}.`,
+    "Piš prostý text bez Markdownu (žádné #, ** ani tabulky); nadpisy VELKÝMI PÍSMENY, odrážky pomlčkou. Text se vkládá přímo do e-mailu.",
+    "Nevymýšlej nic, co v přepisu není; nejasná místa označ [nejasné]. Sekce, ke kterým přepis nic neobsahuje, vynech.",
+  ];
+  if (LENGTHS[opts.length]) rules.push(LENGTHS[opts.length]);
+  if (opts.anon === "yes") {
+    rules.push("Anonymizuj osoby: jména nahraď rolemi (např. „vedoucí projektu“, „zástupce klienta“, „Účastník A“). Vynech telefonní čísla, e-maily, adresy a rodná čísla.");
+  }
+  if (opts.extra?.trim()) rules.push(`Doplňující pokyn uživatele: ${opts.extra.trim()}`);
+  return rules.join("\n") + glossaryRule();
+}
+
+function styleSystem(opts) {
+  const custom = (loadSettings().customStyle || "").trim();
+  const body = opts.style === "custom" ? custom || STYLES.standard.prompt : (STYLES[opts.style] || STYLES.standard).prompt;
+  return `${INTRO}\n\n${body}\n\nPravidla:\n${outputRules(opts)}`;
+}
+
+function defaultOpts() {
+  const st = loadSettings();
+  return { style: st.defaultStyle, length: st.outLength, lang: st.outLang, anon: st.outAnon, extra: "" };
+}
 
 function notesInput(rec) {
   const info = [
@@ -352,49 +471,43 @@ function notesInput(rec) {
   return `${info}\n\n<prepis>\n${rec.transcript}\n</prepis>`;
 }
 
+// ---------- volání AI (Gemini / Claude) ----------
+
 const GEMINI_FALLBACK = "gemini-flash-latest";
 const RETRY_DELAYS = [3, 8, 15]; // sekundy mezi pokusy při přetížení
 
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
-function geminiRequest(st, model, rec) {
+function geminiRequest(st, model, body) {
   return fetch(`${GEMINI_URL}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
     method: "POST",
     headers: { "x-goog-api-key": st.geminiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: NOTES_SYSTEM }] },
-      contents: [{ role: "user", parts: [{ text: notesInput(rec) }] }],
-      generationConfig: { maxOutputTokens: 32768 },
-    }),
+    body,
   });
 }
 
 // Přetížení (503) nebo dočasná chyba serveru: zkusit znovu s prodlevou,
-// nakonec jednou záložní model. Uživatel vidí průběh v detailu nahrávky.
-async function geminiWithRetry(st, model, rec) {
-  const say = (t) => {
-    rec.progress = t;
-    refresh(rec);
-  };
+// nakonec jednou záložní model.
+async function geminiWithRetry(st, model, body, say) {
   const busy = (code) => code >= 500 && code <= 504;
   let res;
   for (let i = 0; ; i++) {
     try {
-      res = await geminiRequest(st, model, rec);
+      res = await geminiRequest(st, model, body);
     } catch {
-      throw new Error("Zápis selhal: nejste připojeni k internetu.");
+      throw new Error("Nejste připojeni k internetu.");
     }
     if (!busy(res.status) || i >= RETRY_DELAYS.length) break;
     say(`Gemini je přetížený, zkouším znovu za ${RETRY_DELAYS[i]} s (pokus ${i + 2}/${RETRY_DELAYS.length + 1})…`);
     await sleep(RETRY_DELAYS[i]);
-    say("Píšu zápis ze schůzky…");
+    say("");
   }
   if (busy(res.status) && model !== GEMINI_FALLBACK) {
     say("Gemini je přetížený, zkouším záložní model…");
     try {
-      const alt = await geminiRequest(st, GEMINI_FALLBACK, rec);
+      const alt = await geminiRequest(st, GEMINI_FALLBACK, body);
       if (alt.ok) {
-        say("Píšu zápis ze schůzky…");
+        say("");
         return alt;
       }
     } catch {}
@@ -402,23 +515,30 @@ async function geminiWithRetry(st, model, rec) {
   return res;
 }
 
-async function makeNotesGemini(rec, onText) {
+async function llmGemini({ system, input, onText, say, json }) {
   const st = loadSettings();
   if (!st.geminiKey) throw new Error("Chybí Gemini API klíč – doplňte ho v Nastavení.");
   const model = st.geminiModel || DEFAULTS.geminiModel;
-  const res = await geminiWithRetry(st, model, rec);
+  const generationConfig = { maxOutputTokens: 32768 };
+  if (json) generationConfig.responseMimeType = "application/json";
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: input }] }],
+    generationConfig,
+  });
+  const res = await geminiWithRetry(st, model, body, say);
   if (!res.ok) {
-    const body = await res.text();
-    if (/API_KEY_INVALID|API key not valid/.test(body)) throw new Error("Zápis selhal: neplatný Gemini klíč.");
-    if (res.status === 429) throw new Error("Zápis selhal: vyčerpaný bezplatný limit Gemini. Zkuste to později tlačítkem Zpracovat znovu.");
-    if (res.status === 404) throw new Error(`Zápis selhal: model „${model}“ neexistuje – změňte ho v Nastavení.`);
-    if (res.status >= 500) throw new Error("Zápis se nepodařil: Gemini je teď přetížený. Přepis je uložený – za pár minut klepněte na Zpracovat znovu, nebo v Nastavení přepněte na Aplikaci Claude.");
-    throw new Error(`Zápis selhal (${res.status}): ${body.slice(0, 200)}`);
+    const text = await res.text();
+    if (/API_KEY_INVALID|API key not valid/.test(text)) throw new Error("Neplatný Gemini klíč – opravte ho v Nastavení.");
+    if (res.status === 429) throw new Error("Vyčerpaný bezplatný limit Gemini. Zkuste to později.");
+    if (res.status === 404) throw new Error(`Model „${model}“ neexistuje – změňte ho v Nastavení.`);
+    if (res.status >= 500) throw new Error("Gemini je teď přetížený. Přepis je uložený – zkuste to za pár minut znovu, nebo v Nastavení přepněte na Aplikaci Claude.");
+    throw new Error(`Gemini vrátil chybu ${res.status}: ${text.slice(0, 200)}`);
   }
   // Odpověď chodí jako SSE: řádky „data: {json}“.
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buf = "";
-  let text = "";
+  let out = "";
   let finish = "";
   for (;;) {
     const { value, done } = await reader.read();
@@ -432,20 +552,20 @@ async function makeNotesGemini(rec, onText) {
       const cand = JSON.parse(line.slice(5)).candidates?.[0];
       for (const p of cand?.content?.parts || []) {
         if (p.text && !p.thought) {
-          text += p.text;
-          onText(text);
+          out += p.text;
+          onText(out);
         }
       }
       if (cand?.finishReason) finish = cand.finishReason;
     }
   }
-  if (!text) {
+  if (!out) {
     throw new Error(/SAFETY|PROHIBITED/.test(finish) ? "Gemini odmítl tento přepis zpracovat." : "Gemini nevrátil žádný text.");
   }
-  return text.trim();
+  return out.trim();
 }
 
-async function makeNotesClaude(rec, onText) {
+async function llmClaude({ system, input, onText }) {
   const st = loadSettings();
   if (!st.anthropicKey) throw new Error("Chybí Anthropic API klíč – doplňte ho v Nastavení.");
   const { default: Anthropic } = await import(SDK_URL);
@@ -458,8 +578,8 @@ async function makeNotesClaude(rec, onText) {
       fallbacks: "default",
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },
-      system: NOTES_SYSTEM,
-      messages: [{ role: "user", content: notesInput(rec) }],
+      system,
+      messages: [{ role: "user", content: input }],
     });
     let text = "";
     stream.on("text", (delta) => {
@@ -470,16 +590,295 @@ async function makeNotesClaude(rec, onText) {
     if (msg.stop_reason === "refusal") throw new Error("Model odmítl tento přepis zpracovat.");
     return msg.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) throw new Error("Zápis selhal: neplatný Anthropic klíč.");
-    if (err instanceof Anthropic.RateLimitError) throw new Error("Zápis selhal: příliš mnoho požadavků, zkuste to za chvíli.");
-    if (err instanceof Anthropic.APIConnectionError) throw new Error("Zápis selhal: nejste připojeni k internetu.");
-    if (err instanceof Anthropic.APIError) throw new Error(`Zápis selhal (${err.status}): ${err.message}`);
+    if (err instanceof Anthropic.AuthenticationError) throw new Error("Neplatný Anthropic klíč – opravte ho v Nastavení.");
+    if (err instanceof Anthropic.RateLimitError) throw new Error("Příliš mnoho požadavků na Claude, zkuste to za chvíli.");
+    if (err instanceof Anthropic.APIConnectionError) throw new Error("Nejste připojeni k internetu.");
+    if (err instanceof Anthropic.APIError) throw new Error(`Claude vrátil chybu ${err.status}: ${err.message}`);
     throw err;
   }
 }
 
-function makeNotes(rec, onText) {
-  return loadSettings().notesProvider === "anthropic" ? makeNotesClaude(rec, onText) : makeNotesGemini(rec, onText);
+// Kterou AI použít: zvolenou v Nastavení; v ručním režimu tu, ke které je klíč.
+function aiProvider(st = loadSettings()) {
+  if (st.notesProvider === "anthropic") return st.anthropicKey ? "anthropic" : null;
+  if (st.notesProvider === "gemini") return st.geminiKey ? "gemini" : null;
+  return st.geminiKey ? "gemini" : st.anthropicKey ? "anthropic" : null;
+}
+
+function llm({ system, input, onText = () => {}, say = () => {}, json = false }) {
+  const p = aiProvider();
+  if (!p) throw new Error("Pro tuto funkci je potřeba klíč Gemini nebo Claude API – doplňte ho v Nastavení.");
+  return p === "anthropic" ? llmClaude({ system, input, onText }) : llmGemini({ system, input, onText, say, json });
+}
+
+// ---------- verze výstupu ----------
+
+const rid = () => crypto.randomUUID().slice(0, 8);
+
+// Starší nahrávky mají jen rec.notes – převedeme na první verzi.
+function versionsOf(rec) {
+  if (!rec.versions) {
+    rec.versions = rec.notes
+      ? [{ id: "v0", style: "standard", opts: { style: "standard" }, label: STYLES.standard.label, text: rec.notes, created: rec.created }]
+      : [];
+    rec.active = rec.versions[0]?.id || null;
+  }
+  return rec.versions;
+}
+
+function activeVersion(rec) {
+  const vs = versionsOf(rec);
+  return vs.find((v) => v.id === rec.active) || vs[vs.length - 1] || null;
+}
+
+function setActive(rec, id) {
+  rec.active = id;
+  rec.notes = activeVersion(rec)?.text || "";
+}
+
+function versionLabel(o) {
+  let l = (STYLES[o.style] || STYLES.standard).label;
+  if (o.lang && o.lang !== "cs") l += ` · ${o.lang.toUpperCase()}`;
+  if (o.length === "short") l += " · stručně";
+  if (o.length === "long") l += " · podrobně";
+  if (o.anon === "yes") l += " · anonymní";
+  return l;
+}
+
+function addVersion(rec, opts, text, label) {
+  versionsOf(rec);
+  const v = { id: rid(), style: opts.style, opts, label: label || versionLabel(opts), text, created: new Date().toISOString() };
+  rec.versions.push(v);
+  setActive(rec, v.id);
+  return v;
+}
+
+// Rozpracovaná verze (streamuje se): rec.id -> { label, text, status }
+const drafts = new Map();
+
+async function generateVersion(rec, opts, { system, input, label } = {}) {
+  if (drafts.has(rec.id) || processing.has(rec.id)) return toast("Počkejte, až se dokončí rozpracovaná verze.");
+  if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
+  const draft = { label: label || versionLabel(opts), text: "", status: "" };
+  drafts.set(rec.id, draft);
+  showTab("notes");
+  refresh(rec);
+  let last = 0;
+  try {
+    const text = await llm({
+      system: system || styleSystem(opts),
+      input: input || notesInput(rec),
+      say: (t) => {
+        draft.status = t;
+        refresh(rec);
+      },
+      onText: (t) => {
+        draft.text = t;
+        if (Date.now() - last > 150) {
+          last = Date.now();
+          refresh(rec);
+        }
+      },
+    });
+    addVersion(rec, opts, text, draft.label);
+    if (["error", "manual"].includes(rec.status)) Object.assign(rec, { status: "done", error: "" });
+    await putRec(rec);
+    toast("Nová verze je hotová.");
+  } catch (err) {
+    toast(err.message || String(err));
+  } finally {
+    drafts.delete(rec.id);
+    refresh(rec);
+  }
+}
+
+const EDIT_QUICK = [
+  ["Zkrátit na polovinu", "Zkrať text zhruba na polovinu, zachovej všechna rozhodnutí, úkoly a termíny."],
+  ["Formálněji", "Přepiš formálnějším, úředním jazykem."],
+  ["Doplnit čísla a termíny", "Projdi přepis a doplň do zápisu všechna čísla, částky, data a termíny, které v něm chybí."],
+  ["Jen odrážky", "Převeď celý text na stručné odrážky, žádné souvislé odstavce."],
+  ["Do angličtiny", "Přelož celý text do angličtiny."],
+  ["Do slovenštiny", "Prelož celý text do slovenčiny."],
+];
+
+function aiEdit(rec, instruction) {
+  const v = activeVersion(rec);
+  if (!v) return toast("Nejdřív je potřeba mít zápis.");
+  const system = `Upravuješ hotový zápis ze schůzky podle pokynu uživatele. Přepis schůzky máš k dispozici pro kontrolu faktů – nepřidávej nic, co v něm není. Vrať celý upravený text (ne jen změny), bez úvodu a komentářů. Zachovej jazyk zápisu, pokud pokyn neříká jinak. Piš prostý text bez Markdownu (žádné #, ** ani tabulky).${glossaryRule()}`;
+  const input = `<prepis>\n${rec.transcript}\n</prepis>\n\n<zapis>\n${v.text}\n</zapis>\n\nPokyn: ${instruction}`;
+  const base = v.label.replace(/ · upraveno.*$/, "");
+  return generateVersion(rec, { ...(v.opts || {}), style: v.style }, { system, input, label: `${base} · upraveno` });
+}
+
+// ---------- úkoly ----------
+
+const ops = new Set(); // běžící akce: `${rec.id}:tasks`, `${rec.id}:ask`
+
+function isoDate(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function fmtDate(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  return d.toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric", month: "numeric" });
+}
+
+function parseJsonArray(text) {
+  const clean = text.replace(/```(?:json)?/g, "");
+  const a = clean.indexOf("[");
+  const b = clean.lastIndexOf("]");
+  try {
+    const arr = JSON.parse(clean.slice(a, b + 1));
+    if (Array.isArray(arr)) return arr;
+  } catch {}
+  throw new Error("AI nevrátila platný seznam úkolů. Zkuste to znovu.");
+}
+
+async function extractTasks(rec) {
+  const key = `${rec.id}:tasks`;
+  if (ops.has(key)) return;
+  if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
+  ops.add(key);
+  refresh(rec);
+  const day = new Date(rec.created);
+  const system = `Z přepisu schůzky vytáhni všechny úkoly – výslovně zadané i jasně vyplývající ze slibů („pošlu“, „připravím“, „ozvu se“, „zjistím“).
+Schůzka proběhla ${day.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} (${isoDate(day)}). Relativní termíny („do pátku“, „příští týden“, „do konce měsíce“) přepočítej na konkrétní datum.
+Vrať POUZE JSON pole, nic jiného. Každý prvek:
+{"co": "konkrétní úkol, začni slovesem", "kdo": "jméno nebo role, nebo null", "termin": "YYYY-MM-DD nebo null", "termin_text": "termín tak, jak zazněl, nebo null", "priorita": "vysoká" | "střední" | "nízká"}
+Úkoly piš česky. Nevymýšlej úkoly, které z přepisu nevyplývají. Když žádné nejsou, vrať [].${glossaryRule()}`;
+  try {
+    const text = await llm({ system, input: notesInput(rec), json: true });
+    const old = new Map((rec.tasks || []).map((t) => [t.what.toLowerCase(), t.done]));
+    rec.tasks = parseJsonArray(text)
+      .map((t) => ({
+        id: rid(),
+        what: String(t.co || "").trim(),
+        who: t.kdo ? String(t.kdo) : "",
+        due: /^\d{4}-\d{2}-\d{2}$/.test(t.termin || "") ? t.termin : "",
+        dueText: t.termin_text ? String(t.termin_text) : "",
+        prio: t.priorita || "střední",
+        done: false,
+      }))
+      .filter((t) => t.what)
+      .map((t) => ({ ...t, done: old.get(t.what.toLowerCase()) || false }))
+      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+    rec.tasksAt = new Date().toISOString();
+    await putRec(rec);
+    toast(rec.tasks.length ? `Nalezeno úkolů: ${rec.tasks.length}` : "Ve schůzce nezazněly žádné úkoly.");
+  } catch (err) {
+    toast(err.message || String(err));
+  } finally {
+    ops.delete(key);
+    refresh(rec);
+  }
+}
+
+function tasksText(rec) {
+  return (rec.tasks || [])
+    .map((t) => `${t.done ? "☑" : "☐"} ${t.who ? t.who + ": " : ""}${t.what}${t.due ? ` (do ${new Date(`${t.due}T12:00:00`).toLocaleDateString("cs-CZ")})` : t.dueText ? ` (${t.dueText})` : ""}`)
+    .join("\n");
+}
+
+function icsEsc(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
+}
+
+function tasksIcs(rec) {
+  const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Zapisovac//CS", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  for (const t of (rec.tasks || []).filter((t) => t.due && !t.done)) {
+    const start = t.due.replace(/-/g, "");
+    const end = isoDate(new Date(new Date(`${t.due}T12:00:00`).getTime() + 864e5)).replace(/-/g, "");
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${rec.id}-${t.id}@zapisovac`,
+      `DTSTAMP:${now}`,
+      `DTSTART;VALUE=DATE:${start}`,
+      `DTEND;VALUE=DATE:${end}`,
+      `SUMMARY:${icsEsc((t.who ? t.who + ": " : "") + t.what)}`,
+      `DESCRIPTION:${icsEsc(`Úkol ze schůzky ${rec.name}`)}`,
+      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsEsc(t.what)}`, "TRIGGER:-PT15H", "END:VALARM",
+      "END:VEVENT",
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+// ---------- otázky ke schůzce ----------
+
+const ASK_QUICK = [
+  ["Co zůstalo nedořešené?", "Co zůstalo nedořešené? Vypiš otevřené body, úkoly bez odpovědné osoby nebo bez termínu a věci, které někdo zmínil, ale nikdo je nevzal na sebe."],
+  ["Kdo co slíbil?", "Kdo co slíbil nebo na sebe vzal? U každého uveď krátkou doslovnou citaci z přepisu."],
+  ["Ověřit zápis", "verify"],
+  ["Čísla a termíny", "Vypiš všechna čísla, částky, data a termíny, které zazněly, a v jaké souvislosti."],
+  ["Rizika a nesouhlas", "Jaká rizika, obavy nebo nesouhlasy na schůzce zazněly a od koho?"],
+];
+
+const VERIFY_Q = `Porovnej zápis s přepisem a napiš:
+TVRZENÍ BEZ OPORY V PŘEPISU – co zápis tvrdí, ale přepis to neříká nebo to říká jinak (s citací)
+CO V ZÁPISU CHYBÍ – důležité věci z přepisu, které zápis vynechal
+VERDIKT – jedna věta, zda je zápis věrný`;
+
+async function ask(rec, question, label) {
+  const key = `${rec.id}:ask`;
+  if (ops.has(key)) return;
+  if (!rec.transcript) return toast("Nejdřív je potřeba mít přepis.");
+  const verify = question === "verify";
+  const v = activeVersion(rec);
+  if (verify && !v) return toast("Není co ověřovat – zápis zatím není.");
+  ops.add(key);
+  rec.qa = rec.qa || [];
+  const item = { q: label || question, a: "", at: new Date().toISOString(), pending: true };
+  rec.qa.unshift(item);
+  refresh(rec);
+  const system = `Odpovídáš na otázky k jedné konkrétní schůzce. Vycházej jen z přepisu${verify ? " a zápisu" : ""}. Tvrzení podlož krátkou doslovnou citací z přepisu v uvozovkách. Pokud odpověď v přepisu není, řekni to rovnou. Odpovídej stručně, česky, prostým textem bez Markdownu; nadpisy VELKÝMI PÍSMENY, odrážky pomlčkou.${glossaryRule()}`;
+  const input = `${notesInput(rec)}${verify ? `\n\n<zapis>\n${v.text}\n</zapis>` : ""}\n\nOtázka: ${verify ? VERIFY_Q : question}`;
+  let last = 0;
+  try {
+    item.a = await llm({
+      system,
+      input,
+      onText: (t) => {
+        item.a = t;
+        if (Date.now() - last > 150) {
+          last = Date.now();
+          refresh(rec);
+        }
+      },
+    });
+  } catch (err) {
+    item.a = `Nepodařilo se: ${err.message || err}`;
+    item.error = true;
+  } finally {
+    delete item.pending;
+    ops.delete(key);
+    await putRec(rec);
+    refresh(rec);
+  }
+}
+
+// ---------- uložení souboru ----------
+
+async function saveFile(name, text, type, { preferShare = true } = {}) {
+  const file = new File([text], name, { type });
+  if (preferShare && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function safeName(s) {
+  return s.replace(/[\\/:*?"<>|]/g, "-");
 }
 
 // ---------- zpracování nahrávky ----------
@@ -519,16 +918,34 @@ async function processRecording(rec, { redo = false, notesOnly = false } = {}) {
       await update({ status: "manual", progress: "" });
       return;
     }
-    await update({ progress: "Píšu zápis ze schůzky…", notes: "" });
+    await update({ progress: "Píšu zápis ze schůzky…" });
+    const opts = defaultOpts();
+    const draft = { label: versionLabel(opts), text: "", status: "" };
+    drafts.set(rec.id, draft);
     let last = 0;
-    const notes = await makeNotes(rec, (t) => {
-      rec.notes = t;
-      if (Date.now() - last > 150) {
-        last = Date.now();
-        refresh(rec);
-      }
-    });
-    await update({ notes, status: "done", progress: "" });
+    try {
+      const notes = await llm({
+        system: styleSystem(opts),
+        input: notesInput(rec),
+        say: (t) => {
+          rec.progress = t || "Píšu zápis ze schůzky…";
+          refresh(rec);
+        },
+        onText: (t) => {
+          draft.text = t;
+          if (Date.now() - last > 150) {
+            last = Date.now();
+            refresh(rec);
+          }
+        },
+      });
+      addVersion(rec, opts, notes);
+    } catch (err) {
+      throw new Error(`Zápis se nepodařil: ${err.message || err}`);
+    } finally {
+      drafts.delete(rec.id);
+    }
+    await update({ status: "done", progress: "" });
     if (currentId === rec.id) toast("Zápis je hotový.");
   } catch (err) {
     await update({ status: "error", progress: "", error: err.message || String(err) });
@@ -873,6 +1290,8 @@ async function openDetail(id, rec) {
   if (!rec) return;
   currentId = id;
   renderAudio(rec);
+  stopEditing();
+  $("#aiEditBox").hidden = true;
   showTab("notes");
   renderDetail(rec);
   $("#detail").hidden = false;
@@ -917,7 +1336,9 @@ function renderDetail(rec) {
   $("#btnContinue").classList.toggle("secondary", rec.status !== "interrupted");
   const manual = !!rec.transcript && (rec.status === "manual" || loadSettings().notesProvider === "claude-manual");
   $("#manualBox").hidden = !manual;
-  $("#dNotes").textContent = rec.notes || (rec.status === "processing" ? "Zápis se připravuje…" : "Zápis zatím není.");
+  renderNotes(rec);
+  renderTasks(rec);
+  renderQa(rec);
   $("#dTranscript").textContent = rec.transcript || rec.live || "Přepis zatím není.";
   $("#btnRedo").disabled = busy || rec.status === "interrupted";
   $("#btnEmail").disabled = !rec.notes || busy;
@@ -929,10 +1350,81 @@ function refresh(rec) {
   else renderList();
 }
 
+const PANELS = { notes: "#pNotes", tasks: "#pTasks", ask: "#pAsk", transcript: "#dTranscript" };
+
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  $("#dNotes").hidden = name !== "notes";
-  $("#dTranscript").hidden = name !== "transcript";
+  for (const [k, sel] of Object.entries(PANELS)) $(sel).hidden = k !== name;
+}
+
+function renderNotes(rec) {
+  const vs = versionsOf(rec);
+  const draft = drafts.get(rec.id);
+  const act = activeVersion(rec);
+  $("#dVersions").innerHTML =
+    vs.map((v) => `<button class="vchip${!draft && v.id === act?.id ? " active" : ""}" data-vid="${v.id}">${esc(v.label)}</button>`).join("") +
+    (draft ? `<span class="vchip active drafting"><i class="spin"></i>${esc(draft.label)}</span>` : "") +
+    `<button class="vchip add" data-new="1"><svg><use href="#i-plus"/></svg>Nový styl</button>`;
+  if (draft) $("#dVersions").lastElementChild.previousElementSibling?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  const editing = !$("#dNotesEdit").hidden;
+  if (!editing) {
+    $("#dNotes").textContent = draft
+      ? draft.text || draft.status || "Píšu novou verzi…"
+      : act ? act.text : rec.status === "processing" ? "Zápis se připravuje…" : "Zápis zatím není.";
+  }
+  $("#dNotes").classList.toggle("streaming", !!draft);
+  $("#notesTools").hidden = !act || !!draft || editing;
+  $("#btnDelVersion").hidden = vs.length < 2;
+  $("#aiEditGo").disabled = !!draft;
+}
+
+function renderTasks(rec) {
+  const busy = ops.has(`${rec.id}:tasks`);
+  const tasks = rec.tasks || [];
+  const btn = $("#btnTasks");
+  btn.disabled = busy || !rec.transcript;
+  btn.innerHTML = busy ? `<i class="spin"></i>Hledám úkoly…` : `<svg><use href="#i-sparkle"/></svg>${tasks.length ? "Najít znovu" : "Najít úkoly"}`;
+  $("#tasksActions").hidden = !tasks.length;
+  $("#btnTasksIcs").disabled = !tasks.some((t) => t.due && !t.done);
+  const done = tasks.filter((t) => t.done).length;
+  $("#tasksSummary").textContent = tasks.length ? `${done} z ${tasks.length} hotovo` : "";
+  $("#dTasks").innerHTML = tasks.length
+    ? tasks.map((t) => `
+      <li class="task${t.done ? " done" : ""}">
+        <label>
+          <input type="checkbox" data-tid="${t.id}"${t.done ? " checked" : ""}>
+          <span class="tick"><svg><use href="#i-check"/></svg></span>
+          <span class="task-body">
+            <span class="task-what">${esc(t.what)}</span>
+            <span class="task-meta">
+              ${t.who ? `<span class="chip">${esc(t.who)}</span>` : `<span class="chip s-interrupted">kdo?</span>`}
+              ${t.due ? `<span class="chip s-processing">${esc(fmtDate(t.due))}</span>` : t.dueText ? `<span class="chip">${esc(t.dueText)}</span>` : `<span class="chip">bez termínu</span>`}
+              ${t.prio === "vysoká" ? `<span class="chip s-error">priorita</span>` : ""}
+            </span>
+          </span>
+        </label>
+      </li>`).join("")
+    : `<li class="panel-empty">${busy ? "Procházím přepis…" : "AI projde přepis a sestaví seznam: kdo co slíbil a do kdy. Úkoly pak můžete odškrtávat, poslat e-mailem nebo přidat do kalendáře."}</li>`;
+}
+
+function renderQa(rec) {
+  const busy = ops.has(`${rec.id}:ask`);
+  $("#askGo").disabled = busy || !rec.transcript;
+  document.querySelectorAll("#askQuick button").forEach((b) => (b.disabled = busy || !rec.transcript));
+  const qa = rec.qa || [];
+  $("#dQa").innerHTML = qa.length
+    ? qa.map((x) => `
+      <div class="qa-item${x.error ? " error" : ""}">
+        <div class="qa-q">${esc(x.q)}</div>
+        <div class="qa-a">${x.pending && !x.a ? `<i class="spin"></i>Hledám v přepisu…` : esc(x.a)}</div>
+      </div>`).join("")
+    : `<p class="panel-empty">Zeptejte se na cokoli, co na schůzce zaznělo. Odpovědi jsou podložené citacemi z přepisu.</p>`;
+}
+
+function stopEditing() {
+  $("#dNotesEdit").hidden = true;
+  $("#editBar").hidden = true;
+  $("#dNotes").hidden = false;
 }
 
 function emailRec(rec) {
@@ -965,8 +1457,8 @@ function downloadRec(rec) {
   });
 }
 
-function openInClaude(rec) {
-  navigator.clipboard.writeText(`${NOTES_SYSTEM}\n\n${notesInput(rec)}`).then(
+function openInClaude(rec, opts = defaultOpts()) {
+  navigator.clipboard.writeText(`${styleSystem(opts)}\n\n${notesInput(rec)}`).then(
     () => toast("Zkopírováno. V Claude dlouze podržte pole zprávy a dejte Vložit."),
     () => toast("Kopírování se nepodařilo."),
   );
@@ -981,10 +1473,11 @@ async function pasteNotes(rec) {
     return toast("Schránku se nepodařilo přečíst.");
   }
   if (!text || text.includes("<prepis>")) return toast("Ve schránce není hotový zápis. V Claude ho nejdřív zkopírujte.");
-  Object.assign(rec, { notes: text, status: "done" });
+  addVersion(rec, { style: "standard" }, text, "Z aplikace Claude");
+  Object.assign(rec, { status: "done", error: "" });
   await putRec(rec);
   refresh(rec);
-  toast("Zápis vložen.");
+  toast("Zápis vložen jako nová verze.");
 }
 
 async function continueRecording(rec) {
@@ -1038,6 +1531,161 @@ function bind() {
       closeDetail();
     }
   });
+
+  // --- verze výstupu ---
+  $("#dVersions").addEventListener("click", async (e) => {
+    const rec = currentRec;
+    if (!rec) return;
+    if (e.target.closest("[data-new]")) return openStyleDialog();
+    const b = e.target.closest("[data-vid]");
+    if (!b || drafts.has(rec.id)) return;
+    stopEditing();
+    setActive(rec, b.dataset.vid);
+    await putRec(rec);
+    refresh(rec);
+  });
+  $("#btnEditText").addEventListener("click", () => {
+    const v = currentRec && activeVersion(currentRec);
+    if (!v) return;
+    $("#dNotesEdit").value = v.text;
+    $("#dNotesEdit").hidden = false;
+    $("#editBar").hidden = false;
+    $("#dNotes").hidden = true;
+    $("#aiEditBox").hidden = true;
+    $("#notesTools").hidden = true;
+    $("#dNotesEdit").focus();
+  });
+  $("#btnEditCancel").addEventListener("click", () => {
+    stopEditing();
+    refresh(currentRec);
+  });
+  $("#btnEditSave").addEventListener("click", async () => {
+    const rec = currentRec;
+    const v = rec && activeVersion(rec);
+    if (!v) return;
+    v.text = $("#dNotesEdit").value.trim();
+    v.edited = true;
+    rec.notes = v.text;
+    await putRec(rec);
+    stopEditing();
+    refresh(rec);
+    toast("Úpravy uloženy.");
+  });
+  $("#btnAiEdit").addEventListener("click", () => {
+    const box = $("#aiEditBox");
+    box.hidden = !box.hidden;
+    if (!box.hidden) $("#aiEditInput").focus();
+  });
+  $("#aiEditQuick").innerHTML = EDIT_QUICK.map(([l], i) => `<button type="button" class="qchip" data-i="${i}">${esc(l)}</button>`).join("");
+  $("#aiEditQuick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-i]");
+    if (!b || !currentRec) return;
+    $("#aiEditBox").hidden = true;
+    aiEdit(currentRec, EDIT_QUICK[b.dataset.i][1]);
+  });
+  const runAiEdit = () => {
+    const q = $("#aiEditInput").value.trim();
+    if (!q || !currentRec) return;
+    $("#aiEditInput").value = "";
+    $("#aiEditBox").hidden = true;
+    aiEdit(currentRec, q);
+  };
+  $("#aiEditGo").addEventListener("click", runAiEdit);
+  $("#aiEditInput").addEventListener("keydown", (e) => e.key === "Enter" && runAiEdit());
+  $("#btnSaveFile").addEventListener("click", () => {
+    const rec = currentRec;
+    const v = rec && activeVersion(rec);
+    if (v) saveFile(`${safeName(rec.name)} – ${safeName(v.label)}.txt`, v.text, "text/plain");
+  });
+  $("#btnDelVersion").addEventListener("click", async () => {
+    const rec = currentRec;
+    const v = rec && activeVersion(rec);
+    if (!v || rec.versions.length < 2) return;
+    if (!confirm(`Smazat verzi „${v.label}“?`)) return;
+    rec.versions = rec.versions.filter((x) => x.id !== v.id);
+    setActive(rec, rec.versions[rec.versions.length - 1].id);
+    await putRec(rec);
+    refresh(rec);
+  });
+
+  // --- nový styl ---
+  const sdlg = $("#styleDlg");
+  const sform = $("#styleForm");
+  $("#styleGrid").innerHTML = Object.entries(STYLES).map(([id, s]) => `
+    <label class="style-card">
+      <input type="radio" name="style" value="${id}">
+      <span class="sc-title">${esc(s.label)}</span>
+      <span class="sc-desc">${esc(s.desc)}</span>
+    </label>`).join("");
+  function openStyleDialog() {
+    if (!currentRec?.transcript) return toast("Nejdřív je potřeba mít přepis.");
+    const o = defaultOpts();
+    sform.elements.style.value = o.style;
+    sform.elements.slength.value = o.length;
+    sform.elements.slang.value = o.lang;
+    sform.elements.sanon.value = o.anon;
+    sform.elements.sextra.value = "";
+    $("#styleManualNote").hidden = !!aiProvider();
+    sdlg.showModal();
+  }
+  sdlg.addEventListener("close", () => {
+    if (sdlg.returnValue !== "create" || !currentRec) return;
+    const opts = {
+      style: sform.elements.style.value || "standard",
+      length: sform.elements.slength.value,
+      lang: sform.elements.slang.value,
+      anon: sform.elements.sanon.value,
+      extra: sform.elements.sextra.value,
+    };
+    if (!aiProvider()) return openInClaude(currentRec, opts);
+    generateVersion(currentRec, opts);
+  });
+
+  // --- úkoly ---
+  $("#btnTasks").addEventListener("click", () => currentRec && extractTasks(currentRec));
+  $("#dTasks").addEventListener("change", async (e) => {
+    const id = e.target.dataset.tid;
+    const rec = currentRec;
+    const t = rec?.tasks?.find((x) => x.id === id);
+    if (!t) return;
+    t.done = e.target.checked;
+    await putRec(rec);
+    refresh(rec);
+  });
+  $("#btnTasksCopy").addEventListener("click", () => {
+    navigator.clipboard.writeText(tasksText(currentRec)).then(
+      () => toast("Úkoly zkopírovány."),
+      () => toast("Kopírování se nepodařilo."),
+    );
+  });
+  $("#btnTasksMail").addEventListener("click", () => {
+    const rec = currentRec;
+    const to = loadSettings().email;
+    location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(`Úkoly: ${rec.name}`)}&body=${encodeURIComponent(tasksText(rec))}`;
+  });
+  $("#btnTasksIcs").addEventListener("click", () => {
+    const rec = currentRec;
+    saveFile(`Úkoly – ${safeName(rec.name)}.ics`, tasksIcs(rec), "text/calendar", { preferShare: false });
+  });
+
+  // --- otázky ---
+  $("#askQuick").innerHTML = ASK_QUICK.map(([l], i) => `<button type="button" class="qchip" data-i="${i}">${esc(l)}</button>`).join("");
+  $("#askQuick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-i]");
+    if (!b || !currentRec) return;
+    const [label, q] = ASK_QUICK[b.dataset.i];
+    ask(currentRec, q, label);
+  });
+  const runAsk = () => {
+    const q = $("#askInput").value.trim();
+    if (!q || !currentRec) return;
+    $("#askInput").value = "";
+    ask(currentRec, q);
+  };
+  $("#askGo").addEventListener("click", runAsk);
+  $("#askInput").addEventListener("keydown", (e) => e.key === "Enter" && runAsk());
+
+  $("#sDefaultStyle").innerHTML = Object.entries(STYLES).map(([id, s]) => `<option value="${id}">${esc(s.label)}</option>`).join("");
 
   const dlg = $("#settings");
   const form = $("#settingsForm");
