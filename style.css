@@ -579,6 +579,11 @@ dialog .btn svg { width: 18px; height: 18px; }
 
 /* ---------- test telefonu, režim schůzky ---------- */
 
+fieldset .guide { margin: 0 0 10px; background: var(--surface); box-shadow: none; }
+fieldset .guide summary { padding: 12px 14px; font-size: 14px; color: var(--text); }
+fieldset .guide-body { padding: 0 14px 12px; font-size: 13.5px; }
+
+
 .meeting-banner {
   display: flex; align-items: center; gap: 12px; margin: 4px 0 12px;
   padding: 12px 12px 12px 14px; border-radius: var(--r-md);

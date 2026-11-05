@@ -15,7 +15,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <style>svg{width:20px;height:20px;flex:none}</style>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <!-- Sada ikon (odkazuje se na ně přes <use href="#i-…">) -->
@@ -84,25 +84,6 @@
       </label>
     </section>
 
-    <details class="guide card">
-      <summary><svg><use href="#i-info"/></svg><span>Nahrávání se zhasnutým telefonem</span><svg class="chev"><use href="#i-chev"/></svg></summary>
-      <div class="guide-body">
-        <p>Zapisovač nahrává jen se <b>zapnutým displejem</b>. Zamčením telefonu se nahrávání přeruší – zvuk se ale uloží a můžete klepnout na <b>Pokračovat</b>.</p>
-        <p><b>Aby se telefon sám nezamkl:</b></p>
-        <ul>
-          <li>Nastavení → Zobrazení a jas → Automatický zámek → <b>Nikdy</b></li>
-          <li>Vypněte <b>Úsporný režim</b> – ten zamyká telefon po 30 s.</li>
-          <li>Během nahrávání klepněte na <b>Ztmavit obrazovku</b> – displej zčerná a šetří baterii.</li>
-        </ul>
-        <p><b>Dlouhá schůzka s telefonem v kapse? Použijte Diktafon:</b></p>
-        <ol>
-          <li>Nahrajte schůzku v aplikaci <b>Diktafon</b> – ten nahrává i zamčený.</li>
-          <li>V Diktafonu klepněte na nahrávku → <b>⋯</b> → <b>Sdílet</b> → <b>Uložit do Souborů</b>.</li>
-          <li>Tady klepněte na <b>Importovat nahrávku</b> a vyberte ji.</li>
-        </ol>
-        <p><b>Nahrávka hovoru:</b> v aplikaci Poznámky otevřete nahrávku hovoru → <b>⋯</b> → <b>Uložit zvuk do Souborů</b>, pak Importovat.</p>
-      </div>
-    </details>
 
     <section class="records">
       <h2>Nahrávky</h2>
@@ -288,6 +269,25 @@
         <legend>Nahrávání se zhasnutým displejem</legend>
         <p class="note">Ověří, jestli telefon položený bez dotyku vydrží nahrávat, a poradí, co v telefonu přenastavit.</p>
         <button type="button" id="btnPhoneTest" class="btn secondary"><svg><use href="#i-phone"/></svg>Otestovat telefon</button>
+        <details class="guide">
+          <summary><svg><use href="#i-info"/></svg><span>Návod: zámek displeje, Diktafon, hovory</span><svg class="chev"><use href="#i-chev"/></svg></summary>
+          <div class="guide-body">
+            <p>Zapisovač nahrává jen se <b>zapnutým displejem</b>. Zamčením telefonu se nahrávání přeruší – zvuk se ale uloží a můžete klepnout na <b>Pokračovat</b>.</p>
+            <p><b>Aby se telefon sám nezamkl:</b></p>
+            <ul>
+              <li>Nastavení → Zobrazení a jas → Automatický zámek → <b>Nikdy</b></li>
+              <li>Vypněte <b>Úsporný režim</b> – ten zamyká telefon po 30 s.</li>
+              <li>Během nahrávání klepněte na <b>Ztmavit obrazovku</b> – displej zčerná a šetří baterii.</li>
+            </ul>
+            <p><b>Dlouhá schůzka s telefonem v kapse? Použijte Diktafon:</b></p>
+            <ol>
+              <li>Nahrajte schůzku v aplikaci <b>Diktafon</b> – ten nahrává i zamčený.</li>
+              <li>V Diktafonu klepněte na nahrávku → <b>⋯</b> → <b>Sdílet</b> → <b>Uložit do Souborů</b>.</li>
+              <li>Na úvodní obrazovce klepněte na <b>Importovat nahrávku</b> a vyberte ji.</li>
+            </ol>
+            <p><b>Nahrávka hovoru:</b> v aplikaci Poznámky otevřete nahrávku hovoru → <b>⋯</b> → <b>Uložit zvuk do Souborů</b>, pak Importovat.</p>
+          </div>
+        </details>
         <p id="meetingState" class="note"></p>
         <button type="button" id="btnMeetingOff2" class="btn ghost" hidden>Vypnout režim schůzky</button>
       </fieldset>
@@ -395,6 +395,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script type="module" src="app.js?v=10"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>
